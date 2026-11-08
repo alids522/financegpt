@@ -3,7 +3,7 @@
 def useKotlinMirror = { repositories ->
     repositories.exclusiveContent {
         forRepository {
-            maven { url = 'https://repo.huaweicloud.com/repository/maven' }
+            repositories.maven { url = 'https://repo.huaweicloud.com/repository/maven' }
         }
         filter { includeGroupByRegex('org.jetbrains.kotlin.*') }
     }
