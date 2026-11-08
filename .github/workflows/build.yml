@@ -6,7 +6,6 @@ on:
       - 'docs/**'
       - 'supabase/**'
       - 'workers/**'
-      - 'scripts/**'
       - 'README.md'
   pull_request:
   workflow_dispatch:
@@ -35,12 +34,12 @@ jobs:
       - run: flutter analyze --fatal-infos
       - run: flutter test --reporter expanded
       - name: Configure persistent Android release signing
-        if: env.KEYSTORE_BASE64 != ''
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_PASSWORD"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
           printf 'storeFile=release.jks\nstorePassword=%s\nkeyPassword=%s\nkeyAlias=financegpt\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" > android/key.properties
       - name: Configure Kotlin artifact repository fallback
