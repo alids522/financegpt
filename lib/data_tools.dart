@@ -449,14 +449,18 @@ extension _FinanceDataTools on _FinanceShellState {
         toast('Tambahkan akun tujuan import terlebih dahulu.');
         return;
       }
-      final f = await FilePicker.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['csv', 'pdf'],
-        withData: true,
       );
-      if (f == null) return;
-      final file = f.files.single;
-      if (file.size > 10485760) throw Exception('Ukuran file maksimal 10 MB.');
+      if (file == null) return;
+      if ((file.lengthSync() ?? 0) > 10485760) {
+        throw Exception('Ukuran file maksimal 10 MB.');
+      }
+      final fileBytes = await file.readAsBytes();
+      if (fileBytes.length > 10485760) {
+        throw Exception('Ukuran file maksimal 10 MB.');
+      }
       List<List<String>> parsed;
       String rawText = '';
       final pdf = file.extension?.toLowerCase() == 'pdf';
@@ -464,7 +468,7 @@ extension _FinanceDataTools on _FinanceShellState {
         final extracted = await store.api(
           'imports/extract-pdf',
           method: 'POST',
-          body: {'data': base64Encode(file.bytes!)},
+          body: {'data': base64Encode(fileBytes)},
         );
         rawText = extracted['text'];
         if (rawText.trim().length < 15) {
@@ -497,7 +501,7 @@ extension _FinanceDataTools on _FinanceShellState {
           ...candidate,
         ];
       } else {
-        parsed = parseCsv(utf8.decode(file.bytes!, allowMalformed: true));
+        parsed = parseCsv(utf8.decode(fileBytes, allowMalformed: true));
       }
       if (parsed.isEmpty) throw Exception('File kosong.');
       if (!mounted) return;
@@ -717,11 +721,14 @@ class _ImportWizardState extends State<ImportWizard> {
     );
     if (v == null) return;
     try {
-      DateTime.parse(v['effective_at']);
+      final effectiveAt = localTime(
+        v['effective_at'],
+      ).toUtc().toIso8601String();
       setState(() {
         row['payload'] = {
           ...p,
           ...v,
+          'effective_at': effectiveAt,
           'amount': int.parse(v['amount']),
           'currency': p['currency'] ?? 'IDR',
           'account_id': p['account_id'] ?? account,

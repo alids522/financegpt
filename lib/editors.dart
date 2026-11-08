@@ -1265,14 +1265,18 @@ class _TransactionEditorState extends State<TransactionEditor> {
 
   Future<void> pickAttachment() async {
     try {
-      final f = await FilePicker.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-        withData: true,
       );
-      if (f == null) return;
-      final file = f.files.single;
-      if (file.size > 10485760) throw Exception('Maksimum lampiran 10 MB.');
+      if (file == null) return;
+      if ((file.lengthSync() ?? 0) > 10485760) {
+        throw Exception('Ukuran file maksimal 10 MB.');
+      }
+      final fileBytes = await file.readAsBytes();
+      if (fileBytes.length > 10485760) {
+        throw Exception('Maksimum lampiran 10 MB.');
+      }
       setState(() => busy = true);
       final path =
           '${widget.store.uid}/attachments/${uuid.v4()}.${file.extension}';
@@ -1280,7 +1284,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
           .from('financegpt-private')
           .uploadBinary(
             path,
-            file.bytes!,
+            fileBytes,
             fileOptions: FileOptions(
               contentType: file.extension == 'pdf'
                   ? 'application/pdf'
