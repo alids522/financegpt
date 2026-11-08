@@ -74,6 +74,9 @@ function normalize(p: Record<string, unknown>) {
     delete p.amount_minor;
   }
   if (p.amount !== undefined) p.amount = minor(p.amount);
+  if (Array.isArray(p.splits)) {
+    p.splits = p.splits.map((split) => normalize({ ...split }));
+  }
   return p;
 }
 function idem(req: Request): string {
@@ -586,6 +589,24 @@ function inputSchema(name: string) {
       effective_at: { type: "string", format: "date-time" },
       description: { type: "string" },
       merchant: { type: "string" },
+      notes: { type: "string" },
+      tags: { type: "array", items: { type: "string" } },
+      custom_fields: {
+        type: "object",
+        additionalProperties: { type: ["string", "number", "boolean", "null"] },
+      },
+      splits: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            category_id: { type: "string", format: "uuid" },
+            amount_minor: { type: "integer", minimum: 1 },
+          },
+          required: ["category_id", "amount_minor"],
+          additionalProperties: false,
+        },
+      },
       status: { enum: ["posted", "pending", "draft"] },
     });
     required = name === "create_transaction"
@@ -598,6 +619,27 @@ function inputSchema(name: string) {
         "effective_at",
       ]
       : ["idempotency_key", "id", "expected_version"];
+  }
+  if (name === "update_transaction") {
+    props.transaction_id = { type: "string", format: "uuid" };
+    props.patch = {
+      type: "object",
+      properties: { ...props },
+      additionalProperties: false,
+    };
+    required = ["idempotency_key", "expected_version"];
+  }
+  if (name === "request_delete_transaction") {
+    props.transaction_id = { type: "string", format: "uuid" };
+    props.reason = { type: "string", minLength: 3 };
+    required = ["idempotency_key", "reason"];
+  }
+  if (name === "update_budget") {
+    props.budget_id = { type: "string", format: "uuid" };
+    required = ["idempotency_key", "expected_version", "amount_minor"];
+  }
+  if (name === "generate_forecast" || name === "simulate_scenario") {
+    props.model = { enum: ["run_rate", "scheduled", "hybrid"] };
   }
   if (name === "get_transaction") {
     props.transaction_id = { type: "string", format: "uuid" };
@@ -707,6 +749,7 @@ async function mcp(req: Request, c: Context, url: URL) {
       scopeUrl.searchParams.set(k, String(v));
     }
   }
+  if (args.model) scopeUrl.searchParams.set("method", String(args.model));
   let output: unknown;
   try {
     if (tool[1]) await authorize(c, tool[1]);
@@ -802,6 +845,39 @@ async function mcp(req: Request, c: Context, url: URL) {
         }
         const key = args.idempotency_key;
         delete args.idempotency_key;
+        if (args.transaction_id || args.budget_id) {
+          args.id = args.transaction_id || args.budget_id;
+        }
+        delete args.transaction_id;
+        delete args.budget_id;
+        if (args.patch) {
+          if (typeof args.patch !== "object" || Array.isArray(args.patch)) {
+            throw new ApiError("validation_error", "patch must be an object");
+          }
+          const patch = args.patch;
+          delete args.patch;
+          Object.assign(args, { ...patch, ...args });
+        }
+        if (tool[0] === "request_delete_transaction") {
+          if (
+            typeof args.reason !== "string" || args.reason.trim().length < 3
+          ) {
+            throw new ApiError(
+              "validation_error",
+              "Deletion reason is required",
+            );
+          }
+          if (args.expected_version === undefined) {
+            const old = await checked(
+              service.from("transactions").select("row_version").eq(
+                "id",
+                args.id,
+              ).eq("user_id", c.uid).single(),
+            );
+            args.expected_version = old.row_version;
+          }
+          args.notes = args.reason;
+        }
         if (typeof key !== "string" || key.length < 8) {
           throw new ApiError("validation_error", "idempotency_key required");
         }
