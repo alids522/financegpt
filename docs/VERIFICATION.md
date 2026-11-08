@@ -4,6 +4,8 @@ Executed against the configured self-hosted backend on 2026-11-08. Test accounts
 
 | Area | Evidence |
 |---|---|
+| Release | [GitHub build 14](https://github.com/alids522/financegpt/actions/runs/42476635534) succeeded: signed APK, Web bundle, checksums and release assets |
+| APK inspection | Downloaded artifact SHA-256 matched both manifest and GitHub release digest; apksigner verified v2/RSA release signature; aapt confirmed package `id.financegpt.finance_tracker`, version 1.0.0/14, INTERNET permission and three Android ABIs |
 | Flutter | 22 tests passed; static analysis and formatting passed |
 | Responsive UI | Dashboard, transactions, accounts, analytics, budgets, forecast, import/export, agents, settings at 360/768/1366 logical pixels, light and dark |
 | Financial calculations | Integer amount parsing, USD edit round-trip, timezone boundaries, calendar weeks, PRD run-rate example, scheduled expansion, hybrid history fallback |
@@ -19,3 +21,5 @@ Executed against the configured self-hosted backend on 2026-11-08. Test accounts
 Reproduce deterministic client checks with `flutter analyze --fatal-infos` and `flutter test`. Run SQL acceptance as an authorized database owner on a disposable Supabase database; the script wraps all fixtures in a rollback. Golden previews in `test/previews` are for visual review and optional regeneration, while widget geometry checks run on every CI build.
 
 Not yet measured: physical Android/iOS device E2E, assistive-technology audit, p95 response-time/load/chaos targets, calibrated historical forecast accuracy. iOS distribution requires a separate Apple signing environment. Mature offline persistence and OCR remain their PRD P1/P2 phases.
+
+Release APK SHA-256: `0dff0ba953ec6e2742ab2834fdd25b6f9ca304d214d1612b900fbe7db3665af9`. QA Auth users, finance fixtures, private report files and OAuth clients were removed after verification. The explicit administrator remains with forced password change and test sessions revoked.
