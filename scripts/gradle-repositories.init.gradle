@@ -13,8 +13,11 @@ def useKotlinMirror = { repositories ->
 settingsEvaluated { settings ->
     useKotlinMirror(settings.pluginManagement.repositories)
     useKotlinMirror(settings.dependencyResolutionManagement.repositories)
-}
-allprojects { project ->
-    useKotlinMirror(project.buildscript.repositories)
-    useKotlinMirror(project.repositories)
+    def permitsProjectRepositories = settings.dependencyResolutionManagement.repositoriesMode.get().toString() == 'PREFER_PROJECT'
+    gradle.beforeProject { project ->
+        useKotlinMirror(project.buildscript.repositories)
+        if (permitsProjectRepositories) {
+            useKotlinMirror(project.repositories)
+        }
+    }
 }
