@@ -120,6 +120,9 @@ void main() {
     final loader = FontLoader('Inter')
       ..addFont(rootBundle.load('assets/fonts/Inter.ttf'));
     await loader.load();
+    final icons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
   for (final width in [360.0, 768.0, 1366.0]) {
     for (final brightness in Brightness.values) {
@@ -184,6 +187,27 @@ void main() {
           );
           await tester.tap(item);
           await tester.pumpAndSettle();
+          if (page == 'Transactions') {
+            await tester.ensureVisible(find.text('Filter lanjutan'));
+            await tester.tap(find.text('Filter lanjutan'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Terapkan'));
+            await tester.pumpAndSettle();
+            expect(find.text('Filter transaksi'), findsNothing);
+            await tester.ensureVisible(find.text('Tambah transaksi'));
+            await tester.tap(find.text('Tambah transaksi'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Simpan'));
+            await tester.pumpAndSettle();
+            expect(find.text('Pilih kategori.'), findsOneWidget);
+            await tester.enterText(find.byType(TextFormField).first, '35000');
+            await tester.tap(find.byTooltip('Tutup'));
+            await tester.pumpAndSettle();
+            expect(find.text('Buang perubahan?'), findsOneWidget);
+            await tester.tap(find.text('Buang perubahan'));
+            await tester.pumpAndSettle();
+            expect(find.byType(TransactionEditor), findsNothing);
+          }
           expect(
             tester.takeException(),
             isNull,

@@ -1,6 +1,159 @@
 part of 'shell.dart';
 
 extension _FinancePages on _FinanceShellState {
+  Future<void> showNotifications() async {
+    final pending = store
+        .rows('agent_pending_actions')
+        .where(
+          (a) =>
+              a['status'] == 'pending' &&
+              DateTime.parse(a['expires_at']).isAfter(financeNow()),
+        )
+        .length;
+    final overdue = store
+        .rows('debts')
+        .where(
+          (d) =>
+              outstanding(d) > 0 &&
+              DateTime.parse(d['due']).isBefore(financeNow()),
+        )
+        .length;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Notifikasi'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (pending > 0)
+                ListTile(
+                  title: Text('$pending permintaan approval agent'),
+                  onTap: () {
+                    Navigator.pop(c);
+                    go(12);
+                  },
+                ),
+              if (overdue > 0)
+                ListTile(
+                  title: Text('$overdue utang / piutang melewati jatuh tempo'),
+                  onTap: () {
+                    Navigator.pop(c);
+                    go(7);
+                  },
+                ),
+              if (budgetTotal > 0 && forecast.projectedVariance < 0)
+                ListTile(
+                  title: Text(
+                    'Proyeksi melebihi budget ${money(-forecast.projectedVariance, store.currency)}',
+                  ),
+                  onTap: () {
+                    Navigator.pop(c);
+                    go(5);
+                  },
+                ),
+              if (pending == 0 &&
+                  overdue == 0 &&
+                  (budgetTotal == 0 || forecast.projectedVariance >= 0))
+                const Text('Tidak ada pemberitahuan baru.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> multipleFilters() async {
+    final accounts = {...filter.accounts}, categories = {...filter.categories};
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, local) => AlertDialog(
+          title: const Text('Pilih beberapa akun & kategori'),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Akun'),
+                  for (final a in store.rows('accounts'))
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(a['name']),
+                      value: accounts.contains(a['id']),
+                      onChanged: (v) => local(() {
+                        if (v == true) {
+                          accounts.add(a['id']);
+                        } else {
+                          accounts.remove(a['id']);
+                        }
+                      }),
+                    ),
+                  const Divider(),
+                  const Text('Kategori · termasuk subkategori'),
+                  for (final a in store.rows('categories'))
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${a['name']} (${a['type']})'),
+                      value: categories.contains(a['id']),
+                      onChanged: (v) => local(() {
+                        if (v == true) {
+                          categories.add(a['id']);
+                        } else {
+                          categories.remove(a['id']);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () {
+                local(() {
+                  accounts.clear();
+                  categories.clear();
+                });
+              },
+              child: const Text('Hapus pilihan'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Terapkan'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (applied == true) {
+      update(() {
+        filter.accounts
+          ..clear()
+          ..addAll(accounts);
+        filter.categories
+          ..clear()
+          ..addAll(categories);
+        filter.account = '';
+        filter.category = '';
+        tablePage = 0;
+      });
+    }
+  }
+
   Widget pageHeading(String title, String subtitle, {Widget? action}) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 24),
@@ -182,11 +335,39 @@ extension _FinancePages on _FinanceShellState {
             label: const Text('Atur tampilan'),
           ),
         ),
-        for (final key in dashboardOrder)
-          if (!hiddenWidgets.contains(key)) ...[
-            parts[key]!,
-            const SizedBox(height: 20),
-          ],
+        LayoutBuilder(
+          builder: (context, box) {
+            final visible = dashboardOrder
+                .where((key) => !hiddenWidgets.contains(key))
+                .toList();
+            final rows = <Widget>[];
+            for (var i = 0; i < visible.length; i++) {
+              final key = visible[i];
+              if (box.maxWidth >= 1000 &&
+                  i + 1 < visible.length &&
+                  ((key == 'cashflow' && visible[i + 1] == 'budgets') ||
+                      (key == 'recent' && visible[i + 1] == 'upcoming'))) {
+                rows.add(
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 2, child: parts[key]!),
+                      const SizedBox(width: 20),
+                      Expanded(child: parts[visible[++i]]!),
+                    ],
+                  ),
+                );
+              } else {
+                rows.add(parts[key]!);
+              }
+              rows.add(const SizedBox(height: 20));
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: rows,
+            );
+          },
+        ),
         if (store.rows('accounts').isEmpty)
           section(
             'Siap memulai?',
@@ -353,6 +534,24 @@ extension _FinancePages on _FinanceShellState {
           child: LineChart(
             LineChartData(
               minX: 0,
+              minY: math.min(0, values.map((v) => v.y).reduce(math.min)),
+              maxY:
+                  math.max(
+                    maxValue,
+                    forecastLine ? budgetTotal.toDouble() : 0,
+                  ) *
+                  1.1,
+              extraLinesData: ExtraLinesData(
+                horizontalLines: forecastLine && budgetTotal > 0
+                    ? [
+                        HorizontalLine(
+                          y: budgetTotal.toDouble(),
+                          color: const Color(0xFFA76A22),
+                          dashArray: [4, 4],
+                        ),
+                      ]
+                    : [],
+              ),
               maxX: (n - 1).toDouble().clamp(1, 366),
               gridData: FlGridData(
                 show: true,
@@ -531,9 +730,16 @@ extension _FinancePages on _FinanceShellState {
     onTap: () => transactionDetail(t),
   );
   List<FinanceRow> get filteredTransactions {
+    final categoryIds = {filter.category, ...filter.categories};
+    categoryIds.addAll(
+      store
+          .rows('categories')
+          .where((c) => categoryIds.contains(c['parent_id']))
+          .map((c) => c['id'] as String),
+    );
     final rows = store
         .rows('transactions')
-        .where((t) => filter.matches(t, period))
+        .where((t) => filter.matches(t, period, categoryIds: categoryIds))
         .toList();
     rows.sort((a, b) {
       final cmp = filter.sort == 'amount'
@@ -577,6 +783,7 @@ extension _FinancePages on _FinanceShellState {
                   SizedBox(
                     width: 260,
                     child: TextField(
+                      controller: searchController,
                       decoration: const InputDecoration(
                         labelText: 'Cari transaksi',
                         prefixIcon: Icon(Icons.search),
@@ -611,6 +818,13 @@ extension _FinancePages on _FinanceShellState {
                     onPressed: advancedFilters,
                     icon: const Icon(Icons.filter_list),
                     label: const Text('Filter lanjutan'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: multipleFilters,
+                    icon: const Icon(Icons.checklist),
+                    label: Text(
+                      'Pilih akun/kategori${filter.accounts.isEmpty && filter.categories.isEmpty ? '' : ' (${filter.accounts.length + filter.categories.length})'}',
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: saveView,
@@ -814,6 +1028,16 @@ extension _FinancePages on _FinanceShellState {
           'account': filter.account,
           'category': filter.category,
           'status': filter.status,
+          'accounts': filter.accounts.toList(),
+          'categories': filter.categories.toList(),
+          'actor': filter.actor,
+          'tag': filter.tag,
+          'merchant': filter.merchant,
+          'min': filter.min,
+          'max': filter.max,
+          'attachmentOnly': filter.attachmentOnly,
+          'sort': filter.sort,
+          'descending': filter.descending,
         }),
       );
       await widget.preferences.setStringList('savedViews', views);
@@ -829,6 +1053,21 @@ extension _FinancePages on _FinanceShellState {
       filter.account = v['account'];
       filter.category = v['category'];
       filter.status = v['status'];
+      filter.accounts
+        ..clear()
+        ..addAll(List<String>.from(v['accounts'] ?? []));
+      filter.categories
+        ..clear()
+        ..addAll(List<String>.from(v['categories'] ?? []));
+      filter.actor = v['actor'] ?? '';
+      filter.tag = v['tag'] ?? '';
+      filter.merchant = v['merchant'] ?? '';
+      filter.min = v['min'];
+      filter.max = v['max'];
+      filter.attachmentOnly = v['attachmentOnly'] ?? false;
+      filter.sort = v['sort'] ?? 'effective_at';
+      filter.descending = v['descending'] ?? true;
+      searchController.text = filter.search;
       tablePage = 0;
     });
   }
@@ -837,6 +1076,7 @@ extension _FinancePages on _FinanceShellState {
     final result = await recordDialog('Filter transaksi', [
       Field(
         'account',
+        required: false,
         'Akun',
         value: filter.account,
         options: {
@@ -846,6 +1086,7 @@ extension _FinancePages on _FinanceShellState {
       ),
       Field(
         'category',
+        required: false,
         'Kategori',
         value: filter.category,
         options: {
@@ -855,6 +1096,7 @@ extension _FinancePages on _FinanceShellState {
       ),
       Field(
         'status',
+        required: false,
         'Status',
         value: filter.status,
         options: {
@@ -867,6 +1109,7 @@ extension _FinancePages on _FinanceShellState {
       ),
       Field(
         'actor',
+        required: false,
         'Sumber',
         value: filter.actor,
         options: {
@@ -881,19 +1124,22 @@ extension _FinancePages on _FinanceShellState {
       Field(
         'min',
         'Nominal minimum',
-        value: filter.min?.toString() ?? '',
+        value: filter.min == null ? '' : moneyInput(filter.min, store.currency),
+        currency: store.currency,
         number: true,
         required: false,
       ),
       Field(
         'max',
         'Nominal maksimum',
-        value: filter.max?.toString() ?? '',
+        value: filter.max == null ? '' : moneyInput(filter.max, store.currency),
+        currency: store.currency,
         number: true,
         required: false,
       ),
       Field(
         'attachment',
+        required: false,
         'Lampiran',
         value: filter.attachmentOnly ? 'yes' : '',
         options: {'': 'Semua', 'yes': 'Hanya dengan lampiran'},
@@ -907,8 +1153,12 @@ extension _FinancePages on _FinanceShellState {
         filter.actor = result['actor'];
         filter.tag = result['tag'];
         filter.merchant = result['merchant'];
-        filter.min = int.tryParse(result['min']);
-        filter.max = int.tryParse(result['max']);
+        filter.min = result['min'] == ''
+            ? null
+            : parseMoney(result['min'], store.currency);
+        filter.max = result['max'] == ''
+            ? null
+            : parseMoney(result['max'], store.currency);
         filter.attachmentOnly = result['attachment'] == 'yes';
         tablePage = 0;
       });
@@ -948,6 +1198,21 @@ extension _FinancePages on _FinanceShellState {
                     onSelected: (v) async {
                       if (v == 'edit') {
                         accountEditor(existing: a);
+                      } else if (v == 'reconcile') {
+                        reconcileAccount(a);
+                      } else if (v == 'delete') {
+                        if (await confirm(
+                          'Hapus akun kosong?',
+                          'Akun hanya dapat dihapus jika belum memiliki transaksi.',
+                        )) {
+                          run(() async {
+                            await store.db.rpc(
+                              'delete_empty_account',
+                              params: {'account_id': a['id']},
+                            );
+                            await store.refresh();
+                          });
+                        }
                       } else if (await confirm(
                         'Arsipkan akun?',
                         'Transaksi dan jurnal historis tetap tersimpan.',
@@ -965,6 +1230,14 @@ extension _FinancePages on _FinanceShellState {
                       const PopupMenuItem(
                         value: 'edit',
                         child: Text('Edit akun'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'reconcile',
+                        child: Text('Rekonsiliasi saldo'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Hapus akun kosong'),
                       ),
                       PopupMenuItem(
                         value: 'archive',
@@ -1223,6 +1496,35 @@ extension _FinancePages on _FinanceShellState {
                 ),
               ],
             ),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    update(() {
+                      filter = TransactionFilter()..status = 'posted';
+                      searchController.clear();
+                      filter.category = b['category_id'] ?? '';
+                      filter.account = b['account_id'] ?? '';
+                      filter.type = 'expense';
+                      customPeriod = Period(
+                        DateTime.parse(b['period_start']),
+                        DateTime.parse(
+                          b['period_end'],
+                        ).add(const Duration(days: 1)),
+                      );
+                      periodType = 'Custom';
+                    });
+                    go(1);
+                  },
+                  child: const Text('Lihat transaksi'),
+                ),
+                TextButton(
+                  onPressed: () => copyBudget(b),
+                  child: const Text('Salin ke periode berikutnya'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -1328,8 +1630,9 @@ extension _FinancePages on _FinanceShellState {
           ),
           kpi(
             'Perkiraan saldo akhir',
-            balance - (f.estimate - expense),
-            note: 'Tanpa pemasukan masa depan tambahan',
+            balance + scheduledIncome - (f.estimate - expense),
+            note:
+                'Termasuk pemasukan terjadwal ${money(scheduledIncome, store.currency)}',
           ),
         ]),
         const SizedBox(height: 20),
@@ -1352,7 +1655,7 @@ extension _FinancePages on _FinanceShellState {
                       ? 'Actual ÷ hari berjalan × total hari.'
                       : model == 'scheduled'
                       ? 'Actual + tagihan terjadwal yang belum posted.'
-                      : 'Actual + jadwal diketahui + estimasi variabel untuk hari tersisa.'}\nJadwal diketahui: ${money(f.scheduled, store.currency)}.\nTidak menggabungkan mata uang berbeda.\nData generated: ${DateFormat('d MMM y HH:mm', 'id_ID').format(DateTime.now())}',
+                      : 'Actual + jadwal diketahui + estimasi variabel untuk hari tersisa.'}\nJadwal diketahui: ${money(f.scheduled, store.currency)}.\nHistori variabel: $historicalVariableDays hari; ${historicalVariableDays >= 14 ? "rata-rata historis" : "fallback run-rate karena data pendek"}.\nTidak menggabungkan mata uang berbeda.\nData generated: ${DateFormat('d MMM y HH:mm', 'id_ID').format(DateTime.now())}',
                   style: const TextStyle(height: 1.8),
                 ),
               ],
@@ -1642,17 +1945,47 @@ extension _FinancePages on _FinanceShellState {
                   t['name'],
                   subtitle:
                       '${t['payload_json']['type']} · ${t['favourite'] == true ? 'Favorit' : 'Preset'}',
-                  action: IconButton(
-                    tooltip: 'Favorit',
-                    icon: Icon(
-                      t['favourite'] == true ? Icons.star : Icons.star_outline,
-                      size: 20,
-                    ),
-                    onPressed: () => run(
-                      () => store.save('transaction_templates', {
-                        'favourite': t['favourite'] != true,
-                      }, id: t['id']),
-                    ),
+                  action: PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (value == 'edit') {
+                        templateEditor(existing: t);
+                      } else if (value == 'favorite') {
+                        run(
+                          () => store.save('transaction_templates', {
+                            'favourite': t['favourite'] != true,
+                          }, id: t['id']),
+                        );
+                      } else if (await confirm(
+                        'Hapus template?',
+                        'Transaksi yang pernah dibuat dari template tetap tersimpan.',
+                      )) {
+                        run(() async {
+                          await store.db.rpc(
+                            'delete_template',
+                            params: {'template_id': t['id']},
+                          );
+                          await store.refresh();
+                        });
+                      }
+                    },
+                    itemBuilder: (c) => [
+                      PopupMenuItem(
+                        value: 'favorite',
+                        child: Text(
+                          t['favourite'] == true
+                              ? 'Hapus favorit'
+                              : 'Jadikan favorit',
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Edit template'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Hapus template'),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1778,6 +2111,17 @@ extension _FinancePages on _FinanceShellState {
                 await store.refresh();
               });
             },
+          ),
+        ),
+        section(
+          'Form transaksi',
+          subtitle: 'Atur urutan, tampilan, nilai default, dan field wajib.',
+          child: OutlinedButton(
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => FormPreferencesDialog(store: store),
+            ),
+            child: const Text('Atur form transaksi'),
           ),
         ),
         passwordPanel(),

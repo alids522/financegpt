@@ -548,7 +548,12 @@ class _ImportWizardState extends State<ImportWizard> {
   List<FinanceRow> preview = [];
   String cell(List<String> row, String key) {
     final i = mapping[key] ?? -1;
-    return i >= 0 && i < row.length ? row[i].trim() : '';
+    if (i < 0 || i >= row.length) return '';
+    var value = row[i];
+    if (headers.join('|') == csvHeaders.join('|')) value = decodeCsvText(value);
+    return ['description', 'merchant', 'source_ref'].contains(key)
+        ? value
+        : value.trim();
   }
 
   void buildPreview() {
@@ -566,8 +571,10 @@ class _ImportWizardState extends State<ImportWizard> {
             .rows('categories')
             .where((c) => c['name'] == cell(row, 'category'))
             .firstOrNull;
-        final date = DateTime.tryParse(cell(row, 'date_time'));
-        if (date == null) throw Exception('Tanggal harus ISO 8601.');
+        if (DateTime.tryParse(cell(row, 'date_time')) == null) {
+          throw Exception('Tanggal harus ISO 8601.');
+        }
+        final date = localTime(cell(row, 'date_time'));
         final amount = int.tryParse(cell(row, 'amount'));
         if (amount == null || amount <= 0) {
           throw Exception('Nominal harus integer minor units > 0.');
@@ -622,6 +629,17 @@ class _ImportWizardState extends State<ImportWizard> {
               : cell(row, 'source_ref'),
         };
         String? validation;
+        final resolvedCategory = widget.store
+            .rows('categories')
+            .where((c) => c['id'] == p['category_id'])
+            .firstOrNull;
+        if (['expense', 'income'].contains(type) &&
+            resolvedCategory?['type'] != type) {
+          validation = 'Tipe kategori tidak sesuai transaksi.';
+        }
+        if (!['posted', 'pending', 'draft', 'voided'].contains(p['status'])) {
+          validation = 'Status tidak valid.';
+        }
         if (type != 'transfer' &&
             type != 'adjustment' &&
             p['category_id'] == null) {

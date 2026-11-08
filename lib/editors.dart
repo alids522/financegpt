@@ -1,6 +1,7 @@
 part of 'shell.dart';
 
 class Field {
+  final String currency;
   final String key, label;
   final String? value;
   final Map<String, String>? options;
@@ -14,6 +15,7 @@ class Field {
     this.number = false,
     this.secret = false,
     this.date = false,
+    this.currency = 'IDR',
   });
 }
 
@@ -122,7 +124,7 @@ class _RecordFormState extends State<RecordForm> {
                               }
                               if (f.number && v!.isNotEmpty) {
                                 try {
-                                  parseMoney(v);
+                                  parseMoney(v, f.currency);
                                 } catch (_) {
                                   return 'Nominal tidak valid.';
                                 }
@@ -146,7 +148,10 @@ class _RecordFormState extends State<RecordForm> {
         onPressed: () {
           if (form.currentState!.validate()) {
             Navigator.pop(context, {
-              for (final e in controls.entries) e.key: e.value.text.trim(),
+              for (final e in controls.entries)
+                e.key: widget.fields.firstWhere((f) => f.key == e.key).secret
+                    ? e.value.text
+                    : e.value.text.trim(),
             });
           }
         },
@@ -157,6 +162,100 @@ class _RecordFormState extends State<RecordForm> {
 }
 
 extension _FinanceEditors on _FinanceShellState {
+  Future<void> reconcileAccount(FinanceRow account) async {
+    final fields = store.rows('custom_field_definitions');
+    final values = await recordDialog('Rekonsiliasi · ${account['name']}', [
+      Field(
+        'statement_balance',
+        'Saldo pada rekening / catatan (${account['currency']})',
+        number: true,
+        currency: account['currency'],
+      ),
+      const Field('reason', 'Alasan penyesuaian'),
+      for (final f in fields)
+        Field(
+          'custom:${f['field_key']}',
+          f['field_key'],
+          required: f['required'] == true,
+        ),
+    ]);
+    if (values == null) return;
+    final custom = <String, dynamic>{};
+    for (final f in fields) {
+      final value = values['custom:${f['field_key']}'];
+      custom[f['field_key']] = switch (f['field_type']) {
+        'number' => num.tryParse(value),
+        'boolean' => value == 'true',
+        _ => value,
+      };
+    }
+    if (!await confirm(
+      'Konfirmasi penyesuaian saldo',
+      'Target saldo ${money(parseMoney(values['statement_balance'], account['currency']), account['currency'])}\n${values['reason']}\nSelisih akan dicatat sebagai jurnal adjustment dengan audit.',
+    )) {
+      return;
+    }
+    run(() async {
+      await store.db.rpc(
+        'reconcile_account',
+        params: {
+          'payload': {
+            'account_id': account['id'],
+            'statement_balance': parseMoney(
+              values['statement_balance'],
+              account['currency'],
+            ),
+            'reason': values['reason'],
+            'custom_fields': custom,
+          },
+          'idempotency_key': uuid.v4(),
+        },
+      );
+      await store.refresh();
+    });
+  }
+
+  Future<void> copyBudget(FinanceRow budget) async {
+    final start = DateTime.parse(
+      budget['period_end'],
+    ).add(const Duration(days: 1));
+    final end = budget['cadence'] == 'monthly'
+        ? DateTime(
+            start.year,
+            start.month + 1,
+            start.day,
+          ).subtract(const Duration(days: 1))
+        : start.add(
+            Duration(
+              days: DateTime.parse(
+                budget['period_end'],
+              ).difference(DateTime.parse(budget['period_start'])).inDays,
+            ),
+          );
+    final rollover = budget['rollover'] == 'remaining'
+        ? math.max(0, integer(budget['amount']) - budgetActual(budget))
+        : 0;
+    if (!await confirm(
+      'Salin budget?',
+      '${dateLabel(start.toIso8601String())} – ${dateLabel(end.toIso8601String())}\nRencana ${money(integer(budget['amount']) + rollover, budget['currency'])}\nRollover ${money(rollover, budget['currency'])}',
+    )) {
+      return;
+    }
+    run(
+      () => store.save('budgets', {
+        'name': budget['name'],
+        'category_id': budget['category_id'],
+        'account_id': budget['account_id'],
+        'amount': integer(budget['amount']) + rollover,
+        'currency': budget['currency'],
+        'cadence': budget['cadence'],
+        'rollover': budget['rollover'],
+        'period_start': DateFormat('yyyy-MM-dd').format(start),
+        'period_end': DateFormat('yyyy-MM-dd').format(end),
+      }),
+    );
+  }
+
   Future<FinanceRow?> recordDialog(
     String title,
     List<Field> fields, {
@@ -401,6 +500,7 @@ extension _FinanceEditors on _FinanceShellState {
             'Saldo awal',
             value: '0',
             number: true,
+            currency: 'USD',
           ),
         ],
         Field(
@@ -460,9 +560,12 @@ extension _FinanceEditors on _FinanceShellState {
         ),
         Field(
           'amount',
-          'Nominal budget (${store.currency})',
-          value: existing?['amount']?.toString(),
+          'Nominal budget (${existing?['currency'] ?? store.currency})',
+          value: existing == null
+              ? null
+              : moneyInput(existing['amount'], existing['currency']),
           number: true,
+          currency: existing?['currency'] ?? store.currency,
         ),
         Field(
           'period_start',
@@ -508,8 +611,11 @@ extension _FinanceEditors on _FinanceShellState {
         () => store.save('budgets', {
           ...v,
           'category_id': v['category_id'] == '' ? null : v['category_id'],
-          'amount': parseMoney(v['amount'], store.currency),
-          'currency': store.currency,
+          'amount': parseMoney(
+            v['amount'],
+            existing?['currency'] ?? store.currency,
+          ),
+          'currency': existing?['currency'] ?? store.currency,
           'row_version': integer(existing?['row_version'] ?? 0) + 1,
         }, id: existing?['id']),
       );
@@ -562,7 +668,12 @@ extension _FinanceEditors on _FinanceShellState {
   Future<void> goalEditor() async {
     final v = await recordDialog('Tujuan tabungan', [
       const Field('name', 'Nama tujuan'),
-      const Field('target_amount', 'Target nominal', number: true),
+      Field(
+        'target_amount',
+        'Target nominal',
+        number: true,
+        currency: store.currency,
+      ),
       Field(
         'target_date',
         'Target tanggal',
@@ -602,8 +713,14 @@ extension _FinanceEditors on _FinanceShellState {
         'Tipe',
         options: {'debt': 'Utang', 'receivable': 'Piutang'},
       ),
-      const Field('principal', 'Pokok', number: true),
-      const Field('rate', 'Bunga (%)', value: '0', number: true),
+      Field('principal', 'Pokok', number: true, currency: store.currency),
+      const Field(
+        'rate',
+        'Bunga (%)',
+        value: '0',
+        number: true,
+        currency: 'USD',
+      ),
       Field(
         'due',
         'Jatuh tempo',
@@ -631,9 +748,16 @@ extension _FinanceEditors on _FinanceShellState {
         'principal_paid',
         'Pokok dibayar',
         number: true,
-        value: outstanding(d).toString(),
+        value: moneyInput(outstanding(d), d['currency']),
+        currency: d['currency'],
       ),
-      const Field('interest_paid', 'Bunga dibayar', number: true, value: '0'),
+      Field(
+        'interest_paid',
+        'Bunga dibayar',
+        number: true,
+        value: '0',
+        currency: d['currency'],
+      ),
       Field(
         'transaction_id',
         'Hubungkan transaksi',
@@ -679,7 +803,7 @@ extension _FinanceEditors on _FinanceShellState {
         'Tipe',
         options: {'expense': 'Pengeluaran', 'income': 'Pemasukan'},
       ),
-      const Field('amount', 'Nominal', number: true),
+      const Field('amount', 'Nominal', number: true, currency: 'USD'),
       Field(
         'account_id',
         'Akun',
@@ -713,7 +837,74 @@ extension _FinanceEditors on _FinanceShellState {
     };
   }
 
-  Future<void> templateEditor() async {
+  Future<void> templateEditor({FinanceRow? existing}) async {
+    if (existing != null) {
+      final p = FinanceRow.from(existing['payload_json']);
+      final currency = p['currency'] ?? store.currency;
+      final v = await recordDialog('Edit template', [
+        Field('name', 'Nama preset', value: existing['name']),
+        Field(
+          'amount',
+          'Nominal default (opsional)',
+          value: p['amount'] == null ? '' : moneyInput(p['amount'], currency),
+          number: true,
+          required: false,
+          currency: currency,
+        ),
+        Field(
+          'account_id',
+          'Akun',
+          value: p['account_id'],
+          options: {for (final a in store.rows('accounts')) a['id']: a['name']},
+        ),
+        Field(
+          'category_id',
+          'Kategori',
+          value: p['category_id'],
+          options: {
+            for (final c in store.rows('categories'))
+              c['id']: '${c['name']} (${c['type']})',
+          },
+        ),
+        Field(
+          'merchant',
+          'Merchant',
+          value: p['merchant'] ?? '',
+          required: false,
+        ),
+        Field(
+          'description',
+          'Deskripsi',
+          value: p['description'] ?? '',
+          required: false,
+        ),
+        Field(
+          'sort_order',
+          'Urutan',
+          value: '${existing['sort_order'] ?? 0}',
+          number: true,
+        ),
+      ]);
+      if (v != null) {
+        run(
+          () => store.save('transaction_templates', {
+            'name': v['name'],
+            'sort_order': int.parse(v['sort_order']),
+            'payload_json': {
+              ...p,
+              'account_id': v['account_id'],
+              'category_id': v['category_id'],
+              'merchant': v['merchant'],
+              'description': v['description'],
+              'amount': v['amount'] == ''
+                  ? null
+                  : parseMoney(v['amount'], currency),
+            },
+          }, id: existing['id']),
+        );
+      }
+      return;
+    }
     final p = await presetFields('Template transaksi');
     if (p != null) {
       run(
@@ -763,7 +954,7 @@ extension _FinanceEditors on _FinanceShellState {
         () => store.save('recurring_rules', {
           ...v,
           'name': p['name'],
-          'next_at': DateTime.parse(v['next_at']).toUtc().toIso8601String(),
+          'next_at': localTime(v['next_at']).toUtc().toIso8601String(),
           'payload_json': {
             ...p,
             'tags': ['scheduled'],
@@ -833,6 +1024,54 @@ class TransactionEditor extends StatefulWidget {
 
 class _TransactionEditorState extends State<TransactionEditor> {
   final form = GlobalKey<FormState>();
+  late final FinanceRow preferences = FinanceRow.from(
+    widget.store.profile['settings_json']?['transaction_form'] ?? {},
+  );
+  bool visible(String key) =>
+      !(preferences['hidden'] as List? ?? []).contains(key);
+  bool requiredField(String key) =>
+      widget.existing == null &&
+      (preferences['required'] as List? ?? []).contains(key);
+  bool customRequired(FinanceRow f) =>
+      f['required'] == true &&
+      (widget.existing == null ||
+          (f['created_at'] != null &&
+              DateTime.parse(
+                    widget.existing!['created_at'],
+                  ).compareTo(DateTime.parse(f['created_at'])) >=
+                  0));
+  String defaultValue(String key) => widget.existing == null
+      ? (preferences['defaults']?[key] ?? '').toString()
+      : '';
+  Widget optionalField(String key) {
+    final labels = {
+      'description': 'Deskripsi',
+      'merchant': 'Merchant / penerima',
+      'notes': 'Catatan',
+      'tags': 'Tags',
+    };
+    final controls = {
+      'description': description,
+      'merchant': merchant,
+      'notes': notes,
+      'tags': tags,
+    };
+    return field(
+      TextFormField(
+        controller: controls[key],
+        maxLines: key == 'notes' ? 2 : 1,
+        decoration: InputDecoration(
+          labelText:
+              '${labels[key]}${requiredField(key) ? ' *' : ' (opsional)'}',
+          helperText: key == 'tags' ? 'Pisahkan dengan koma.' : null,
+        ),
+        validator: (value) => requiredField(key) && (value ?? '').trim().isEmpty
+            ? 'Wajib diisi.'
+            : null,
+      ),
+    );
+  }
+
   late final FinanceRow initial = {...?widget.prefill, ...?widget.existing};
   late String type = initial['type'] ?? 'expense',
       status = initial['status'] ?? 'posted',
@@ -855,12 +1094,18 @@ class _TransactionEditorState extends State<TransactionEditor> {
           ),
   );
   late final description = TextEditingController(
-        text: initial['description'] ?? '',
+        text: initial['description'] ?? defaultValue('description'),
       ),
-      merchant = TextEditingController(text: initial['merchant'] ?? ''),
-      notes = TextEditingController(text: initial['notes'] ?? ''),
+      merchant = TextEditingController(
+        text: initial['merchant'] ?? defaultValue('merchant'),
+      ),
+      notes = TextEditingController(
+        text: initial['notes'] ?? defaultValue('notes'),
+      ),
       tags = TextEditingController(
-        text: (initial['tags'] as List? ?? []).join(', '),
+        text: initial['tags'] == null
+            ? defaultValue('tags')
+            : (initial['tags'] as List).join(', '),
       );
   final Map<String, TextEditingController> custom = {};
   final List<FinanceRow> splits = [];
@@ -1303,47 +1548,28 @@ class _TransactionEditorState extends State<TransactionEditor> {
                             ),
                           ),
                         ),
-                        field(
-                          TextFormField(
-                            controller: description,
-                            decoration: const InputDecoration(
-                              labelText: 'Deskripsi (opsional)',
-                            ),
-                          ),
-                        ),
+                        for (final key in List<String>.from(
+                          preferences['order'] ??
+                              ['description', 'merchant', 'notes', 'tags'],
+                        ))
+                          if ([
+                                'description',
+                                'merchant',
+                                'notes',
+                                'tags',
+                              ].contains(key) &&
+                              visible(key))
+                            optionalField(key),
                         ExpansionTile(
+                          initiallyExpanded: widget.store
+                              .rows('custom_field_definitions')
+                              .any((f) => f['required'] == true),
                           tilePadding: EdgeInsets.zero,
                           title: const Text(
                             'Detail tambahan',
                             style: TextStyle(fontSize: 14),
                           ),
                           children: [
-                            field(
-                              TextFormField(
-                                controller: merchant,
-                                decoration: const InputDecoration(
-                                  labelText: 'Merchant / penerima',
-                                ),
-                              ),
-                            ),
-                            field(
-                              TextFormField(
-                                controller: notes,
-                                maxLines: 2,
-                                decoration: const InputDecoration(
-                                  labelText: 'Catatan',
-                                ),
-                              ),
-                            ),
-                            field(
-                              TextFormField(
-                                controller: tags,
-                                decoration: const InputDecoration(
-                                  labelText: 'Tags',
-                                  helperText: 'Pisahkan dengan koma.',
-                                ),
-                              ),
-                            ),
                             field(
                               DropdownButtonFormField<String>(
                                 initialValue: status,
@@ -1397,7 +1623,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                                               v ?? '';
                                         },
                                         validator: (v) =>
-                                            f['required'] == true &&
+                                            customRequired(f) &&
                                                 (v ?? '').isEmpty
                                             ? 'Wajib diisi.'
                                             : null,
@@ -1415,7 +1641,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                                               : null,
                                         ),
                                         validator: (v) {
-                                          if (f['required'] == true &&
+                                          if (customRequired(f) &&
                                               (v ?? '').isEmpty) {
                                             return 'Wajib diisi.';
                                           }

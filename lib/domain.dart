@@ -66,6 +66,13 @@ int parseMoney(String value, [String currency = 'IDR']) {
       (parts.length == 1 ? 0 : int.parse(parts[1].padRight(2, '0')));
 }
 
+String moneyInput(dynamic value, String currency) {
+  final n = integer(value);
+  return currency == 'IDR'
+      ? '$n'
+      : '${n ~/ 100},${(n.abs() % 100).toString().padLeft(2, '0')}';
+}
+
 class Period {
   final DateTime start;
   final DateTime end;
@@ -123,6 +130,8 @@ class Forecast {
     required DateTime now,
     int scheduled = 0,
     int variableActual = 0,
+    int? historicalVariable,
+    int historicalDays = 0,
     String method = 'run_rate',
   }) {
     final elapsed =
@@ -142,7 +151,10 @@ class Forecast {
       'hybrid' =>
         actual +
             scheduled +
-            (variableActual * (period.days - elapsed) / elapsed).round(),
+            ((historicalDays >= 14 ? historicalVariable ?? 0 : variableActual) *
+                    (period.days - elapsed) /
+                    (historicalDays >= 14 ? historicalDays : elapsed))
+                .round(),
       _ => (actual * period.days / elapsed).round(),
     };
     return Forecast(
@@ -157,7 +169,55 @@ class Forecast {
   }
 }
 
+List<DateTime> scheduledOccurrences(
+  FinanceRow rule,
+  Period period,
+  DateTime now,
+) {
+  if (rule['active'] != true) return [];
+  var date = localTime(rule['next_at']);
+  final result = <DateTime>[];
+  final anchorDay = integer(rule['anchor_day'] ?? date.day),
+      anchorMonth = integer(rule['anchor_month'] ?? date.month);
+  final last = rule['end_at'] == null ? period.end : localTime(rule['end_at']);
+  for (
+    var i = 0;
+    i < 1000 && date.isBefore(period.end) && !date.isAfter(last);
+    i++
+  ) {
+    if (!date.isBefore(period.start) && date.isAfter(now)) result.add(date);
+    switch (rule['cadence']) {
+      case 'daily':
+        date = date.add(const Duration(days: 1));
+      case 'weekly':
+        date = date.add(const Duration(days: 7));
+      case 'yearly':
+        final y = date.year + 1;
+        final days = DateTime(y, anchorMonth + 1, 0).day;
+        date = financeDate(
+          y,
+          anchorMonth,
+          anchorDay.clamp(1, days),
+          date.hour,
+          date.minute,
+        );
+      default:
+        final month = DateTime(date.year, date.month + 1);
+        final days = DateTime(month.year, month.month + 1, 0).day;
+        date = financeDate(
+          month.year,
+          month.month,
+          anchorDay.clamp(1, days),
+          date.hour,
+          date.minute,
+        );
+    }
+  }
+  return result;
+}
+
 class TransactionFilter {
+  final Set<String> accounts = {}, categories = {};
   String search = '',
       type = '',
       account = '',
@@ -169,20 +229,29 @@ class TransactionFilter {
   int? min, max;
   bool attachmentOnly = false, descending = true;
   String sort = 'effective_at';
-  bool matches(FinanceRow t, Period period) =>
+  bool matches(
+    FinanceRow t,
+    Period period, {
+    Set<String> categoryIds = const {},
+  }) =>
       period.contains(t['effective_at']) &&
       (search.isEmpty ||
           '${t['description']} ${t['merchant']} ${t['tags']}'
               .toLowerCase()
               .contains(search.toLowerCase())) &&
       (type.isEmpty || t['type'] == type) &&
-      (account.isEmpty ||
-          t['account_id'] == account ||
-          t['destination_account_id'] == account) &&
-      (category.isEmpty || t['category_id'] == category) &&
+      ((account.isEmpty && accounts.isEmpty) ||
+          {account, ...accounts}.contains(t['account_id']) ||
+          {account, ...accounts}.contains(t['destination_account_id'])) &&
+      ((category.isEmpty && categories.isEmpty) ||
+          categoryIds.contains(t['category_id']) ||
+          {category, ...categories}.contains(t['category_id'])) &&
       (status.isEmpty || t['status'] == status) &&
       (actor.isEmpty || t['source'] == actor) &&
-      (tag.isEmpty || (t['tags'] as List? ?? []).contains(tag)) &&
+      (tag.isEmpty ||
+          tag
+              .split(',')
+              .any((tag) => (t['tags'] as List? ?? []).contains(tag.trim()))) &&
       (merchant.isEmpty ||
           '${t['merchant']}'.toLowerCase().contains(merchant.toLowerCase())) &&
       (min == null || integer(t['amount']) >= min!) &&
@@ -236,6 +305,16 @@ List<List<String>> parseCsv(String source, {String? delimiter}) {
 String encodeCsv(List<List<dynamic>> rows) =>
     '\ufeff${rows.map((r) => r.map((v) {
       var s = v?.toString() ?? '';
-      if (RegExp(r'^[\s]*[=+@]').hasMatch(s) || (s.startsWith('-') && int.tryParse(s) == null)) s = "'$s";
+      if (s.startsWith("'") || RegExp(r'^[\s]*[=+@]').hasMatch(s) || (s.startsWith('-') && int.tryParse(s) == null)) s = "'$s";
       return '"${s.replaceAll('"', '""')}"';
     }).join(',')).join('\r\n')}';
+String decodeCsvText(String value) {
+  if (value.startsWith("''")) return value.substring(1);
+  if (value.startsWith("'") &&
+      (RegExp(r'^[\s]*[=+@]').hasMatch(value.substring(1)) ||
+          (value.substring(1).startsWith('-') &&
+              int.tryParse(value.substring(1)) == null))) {
+    return value.substring(1);
+  }
+  return value;
+}

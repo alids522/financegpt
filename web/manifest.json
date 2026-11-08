@@ -1,11 +1,11 @@
 {
-    "name": "finance_tracker",
-    "short_name": "finance_tracker",
+    "name": "Finance Tracker",
+    "short_name": "Finance Tracker",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#456D9A",
+    "theme_color": "#456D9A",
+    "description": "Personal finance, budgets, forecasts, and reports.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -33,3 +33,4 @@
         }
     ]
 }
+

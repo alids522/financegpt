@@ -18,6 +18,7 @@ part 'pages.dart';
 part 'editors.dart';
 part 'data_tools.dart';
 part 'agents.dart';
+part 'form_preferences.dart';
 
 const navigation = <(String, String, IconData)>[
   ('OVERVIEW', 'Dashboard', Icons.space_dashboard_outlined),
@@ -56,11 +57,13 @@ class _FinanceShellState extends State<FinanceShell> {
   late final store =
       widget.initialStore ?? FinanceStore(Supabase.instance.client);
   int page = 0, tablePage = 0;
+  bool tabletExpanded = false;
   late bool collapsed = widget.preferences.getBool('sidebarCollapsed') ?? false;
   DateTime anchor = financeNow();
   String periodType = 'Month', model = 'run_rate';
   Period? customPeriod;
-  final filter = TransactionFilter();
+  TransactionFilter filter = TransactionFilter();
+  final searchController = TextEditingController();
   final scaffold = GlobalKey<ScaffoldState>();
   bool saving = false;
   int scenario = 0;
@@ -124,32 +127,103 @@ class _FinanceShellState extends State<FinanceShell> {
     );
   }
 
-  int get scheduled => store
-      .rows('recurring_rules')
-      .where(
-        (r) =>
-            r['active'] == true &&
-            period.contains(r['next_at']) &&
-            DateTime.parse(r['next_at']).isAfter(DateTime.now()) &&
-            r['payload_json']['type'] == 'expense' &&
-            r['payload_json']['currency'] == store.currency,
-      )
-      .fold(0, (v, r) => v + integer(r['payload_json']['amount']));
+  int get scheduled =>
+      store
+          .rows('recurring_rules')
+          .where(
+            (r) =>
+                r['active'] == true &&
+                r['payload_json']['type'] == 'expense' &&
+                r['payload_json']['currency'] == store.currency,
+          )
+          .fold(
+            0,
+            (v, r) =>
+                v +
+                integer(r['payload_json']['amount']) *
+                    scheduledOccurrences(r, period, financeNow()).length,
+          ) +
+      periodTransactions
+          .where(
+            (t) =>
+                t['type'] == 'expense' &&
+                t['status'] == 'pending' &&
+                DateTime.parse(t['effective_at']).isAfter(financeNow()),
+          )
+          .fold<int>(0, (sum, t) => sum + integer(t['amount']));
+  int get scheduledIncome =>
+      store
+          .rows('recurring_rules')
+          .where(
+            (r) =>
+                r['payload_json']['type'] == 'income' &&
+                r['payload_json']['currency'] == store.currency,
+          )
+          .fold<int>(
+            0,
+            (sum, r) =>
+                sum +
+                integer(r['payload_json']['amount']) *
+                    scheduledOccurrences(r, period, financeNow()).length,
+          ) +
+      periodTransactions
+          .where(
+            (t) =>
+                t['type'] == 'income' &&
+                t['status'] == 'pending' &&
+                DateTime.parse(t['effective_at']).isAfter(financeNow()),
+          )
+          .fold<int>(0, (sum, t) => sum + integer(t['amount']));
   Forecast get forecast => Forecast.calculate(
     actual: expense,
     budget: budgetTotal,
     period: period,
-    now: DateTime.now(),
+    now: financeNow(),
     method: model,
     scheduled: scheduled,
     variableActual: posted
         .where(
           (t) =>
               t['type'] == 'expense' &&
+              t['source'] != 'recurring' &&
               !(t['tags'] as List? ?? []).contains('scheduled'),
         )
         .fold(0, (v, t) => v + integer(t['amount'])),
+    historicalVariable: historicalVariableTotal,
+    historicalDays: historicalVariableDays,
   );
+  List<FinanceRow> get historicalVariableRows => store
+      .rows('transactions')
+      .where(
+        (t) =>
+            t['status'] == 'posted' &&
+            t['type'] == 'expense' &&
+            t['currency'] == store.currency &&
+            t['source'] != 'recurring' &&
+            !(t['tags'] as List? ?? []).contains('scheduled') &&
+            DateTime.parse(t['effective_at']).isBefore(period.start) &&
+            !DateTime.parse(
+              t['effective_at'],
+            ).isBefore(period.start.subtract(const Duration(days: 90))),
+      )
+      .toList();
+  int get historicalVariableTotal => historicalVariableRows.fold(
+    0,
+    (sum, t) =>
+        sum + integer(t['amount']) * (t['reversal_of'] == null ? 1 : -1),
+  );
+  int get historicalVariableDays {
+    final rows = historicalVariableRows;
+    if (rows.isEmpty) return 0;
+    rows.sort(
+      (a, b) => '${a['effective_at']}'.compareTo('${b['effective_at']}'),
+    );
+    return period.start
+        .difference(DateTime.parse(rows.first['effective_at']))
+        .inDays
+        .clamp(1, 90);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -171,6 +245,7 @@ class _FinanceShellState extends State<FinanceShell> {
 
   @override
   void dispose() {
+    searchController.dispose();
     store.removeListener(changed);
     store.dispose();
     super.dispose();
@@ -540,7 +615,7 @@ class _FinanceShellState extends State<FinanceShell> {
     builder: (c, _) => LayoutBuilder(
       builder: (c, b) {
         final mobile = b.maxWidth < 768;
-        final rail = collapsed || b.maxWidth < 1200;
+        final rail = b.maxWidth < 1200 ? !tabletExpanded : collapsed;
         return Scaffold(
           key: scaffold,
           drawer: mobile
@@ -573,7 +648,13 @@ class _FinanceShellState extends State<FinanceShell> {
                                   if (mobile) {
                                     scaffold.currentState!.openDrawer();
                                   } else {
-                                    update(() => collapsed = !collapsed);
+                                    update(() {
+                                      if (b.maxWidth < 1200) {
+                                        tabletExpanded = !tabletExpanded;
+                                      } else {
+                                        collapsed = !collapsed;
+                                      }
+                                    });
                                     widget.preferences.setBool(
                                       'sidebarCollapsed',
                                       collapsed,
@@ -596,6 +677,21 @@ class _FinanceShellState extends State<FinanceShell> {
                                 ),
                               ),
                               if (!mobile) periodPicker(),
+                              if (b.maxWidth >= 1200)
+                                IconButton(
+                                  tooltip: 'Cari transaksi',
+                                  onPressed: () => go(1),
+                                  icon: const Icon(Icons.search, size: 20),
+                                ),
+                              if (b.maxWidth >= 1200)
+                                IconButton(
+                                  tooltip: 'Notifikasi',
+                                  onPressed: showNotifications,
+                                  icon: const Icon(
+                                    Icons.notifications_none,
+                                    size: 20,
+                                  ),
+                                ),
                               IconButton(
                                 tooltip: 'Muat ulang',
                                 onPressed: store.loading ? null : store.refresh,
