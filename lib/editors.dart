@@ -424,7 +424,7 @@ extension _FinanceEditors on _FinanceShellState {
                 v['opening_balance'],
                 v['currency'],
               ),
-            }..remove('allow_negative'),
+            }..['allow_negative'] = v['allow_negative'] == 'true',
             uuid.v4(),
           );
         } else {

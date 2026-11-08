@@ -54,8 +54,18 @@ class FinanceStore extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final p = await db.from('profiles').select().eq('user_id', uid).single();
+      final p =
+          await db.from('profiles').select().eq('user_id', uid).maybeSingle() ??
+          FinanceRow.from(await api('auth/me') as Map);
       profile = p;
+      if (p['must_change_password'] == true) {
+        data.clear();
+        admin = false;
+        online = true;
+        loading = false;
+        notifyListeners();
+        return;
+      }
       final role = await db
           .from('user_roles')
           .select('role')
