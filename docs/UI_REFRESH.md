@@ -11,3 +11,9 @@ The same palette, corners, fields, dialogs, and panel treatment extend to authen
 Verification: static analysis, existing unit tests, responsive widget regressions and rendered previews at 360/768/1366 logical pixels in light and dark. The responsive test also exercises balance visibility and chart selection. Device rendering/performance is not represented as measured from widget tests.
 
 Preview files: `test/previews/dashboard-{360,768,1366}-{light,dark}.png`.
+
+## Published build
+
+[Build 15](https://github.com/alids522/financegpt/actions/runs/42486905453) passed formatting, static analysis, all 22 tests, Android release compilation and Web release compilation. [Download the release](https://github.com/alids522/financegpt/releases/tag/v1.0.0-build.15).
+
+The downloaded Android artifact matches both its checksum manifest and the GitHub release digest: `5847925309716c7990517afaae9807bab00317c82dfd547a0a9887f69b6cc7ef`. Its verified signing certificate is identical to build 14, with package `id.financegpt.finance_tracker` and version code 15. No signing-key change is required to install this update.
