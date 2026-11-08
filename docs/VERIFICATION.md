@@ -8,6 +8,8 @@ Executed against the configured self-hosted backend on 2026-11-08. Test accounts
 | Responsive UI | Dashboard, transactions, accounts, analytics, budgets, forecast, import/export, agents, settings at 360/768/1366 logical pixels, light and dark |
 | Financial calculations | Integer amount parsing, USD edit round-trip, timezone boundaries, calendar weeks, PRD run-rate example, scheduled expansion, hybrid history fallback |
 | CSV | Quoted newlines/delimiters/BOM, formula neutralization and native round-trip restoration |
+| Fresh installation | Complete combined migration applied to an isolated empty database with Auth/Storage interfaces; ledger/RLS acceptance passed; exact temporary database removed |
+| Policy regression | `supabase/tests/security_policy_acceptance.sql`: atomic policy updates, split-category restrictions, scoped analytics/forecast, destination policy checked again at approval |
 | SQL acceptance | `test/database_acceptance.sql` rolls fixtures back; ledger, idempotent retry, conflict, transfer, pending/posting, refund, splits, budget versions, reconciliation, RLS, OAuth direct-API denial, session revocation |
 | Authentication/admin | Immediate signup, username/email login, no cross-user financial access, protected role fields, suspension, last-admin protection, forced password change and renewed session |
 | REST reports | OpenAPI/analytics/forecast; digital PDF extraction; scanned/image-only PDF rejected with OCR guidance; CSV/PDF queued jobs, retries, private download |
