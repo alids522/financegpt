@@ -1,12 +1,14 @@
-// Keep compiler artifacts on Maven repositories when the plugin portal redirects
-// large jars to unavailable GitHub release URLs. This also covers included builds.
+// Prefer the Maven mirror for Kotlin jars redirected to unavailable release URLs.
+// Use ordinary content filtering: exclusive plugin repositories prohibit Flutter's
+// own buildscript repositories in included builds.
 def useKotlinMirror = { repositories ->
-    repositories.exclusiveContent {
-        forRepository {
-            repositories.maven { url = 'https://repo.huaweicloud.com/repository/maven' }
-        }
-        filter { includeGroupByRegex('org.jetbrains.kotlin.*') }
+    def mirror = repositories.maven {
+        name = 'financeKotlinMirror'
+        url = 'https://repo.huaweicloud.com/repository/maven'
+        content { includeGroupByRegex('org.jetbrains.kotlin.*') }
     }
+    repositories.remove(mirror)
+    repositories.addFirst(mirror)
 }
 settingsEvaluated { settings ->
     useKotlinMirror(settings.pluginManagement.repositories)
@@ -14,4 +16,5 @@ settingsEvaluated { settings ->
 }
 allprojects { project ->
     useKotlinMirror(project.buildscript.repositories)
+    useKotlinMirror(project.repositories)
 }

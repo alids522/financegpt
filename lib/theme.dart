@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-const positive = Color(0xFF287C60),
-    negative = Color(0xFFB64D52),
-    accent = Color(0xFF456D9A);
+const accent = Color(0xFF456D9A);
 ThemeData financeTheme(Brightness b) {
   final dark = b == Brightness.dark;
   final text = dark ? const Color(0xFFEDF0F2) : const Color(0xFF20252B);
