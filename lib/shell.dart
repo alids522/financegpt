@@ -13,11 +13,13 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'domain.dart';
 import 'store.dart';
+import 'glass.dart';
 part 'pages.dart';
 part 'editors.dart';
 part 'data_tools.dart';
 part 'agents.dart';
 part 'form_preferences.dart';
+part 'dashboard.dart';
 
 const navigation = <(String, String, IconData)>[
   ('OVERVIEW', 'Dashboard', Icons.space_dashboard_outlined),
@@ -68,9 +70,36 @@ class _FinanceShellState extends State<FinanceShell> {
   int scenario = 0;
   List<FinanceRow> adminUsers = [], adminLogs = [];
   String adminSearch = '';
-  late List<String> dashboardOrder =
-      (widget.preferences.getStringList('dashboardOrder') ??
-      ['summary', 'cashflow', 'budgets', 'recent', 'upcoming']);
+  bool balanceVisible = true, dashboardChartExpense = false;
+  late List<String> dashboardOrder = initialDashboardOrder();
+  List<String> initialDashboardOrder() {
+    const defaults = [
+      'summary',
+      'accounts',
+      'metrics',
+      'cashflow',
+      'budgets',
+      'recent',
+      'categories',
+      'upcoming',
+    ];
+    final saved = widget.preferences.getStringList('dashboardOrder');
+    if (saved == null) return [...defaults];
+    final order = saved.where(defaults.contains).toList();
+    for (final key in ['accounts', 'metrics', 'categories']) {
+      if (!order.contains(key)) {
+        final before = key == 'accounts'
+            ? 'summary'
+            : key == 'metrics'
+            ? 'accounts'
+            : 'recent';
+        final index = order.indexOf(before);
+        order.insert(index < 0 ? order.length : index + 1, key);
+      }
+    }
+    return order;
+  }
+
   late Set<String> hiddenWidgets =
       (widget.preferences.getStringList('hiddenWidgets') ?? []).toSet();
   Period get period =>
@@ -81,11 +110,11 @@ class _FinanceShellState extends State<FinanceShell> {
         weekStart: integer(store.profile['week_start'] ?? 1),
       );
   Color get positive => Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFF72B39A)
-      : const Color(0xFF287C60);
+      ? const Color(0xFF62DDB0)
+      : const Color(0xFF11875B);
   Color get negative => Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFFD88989)
-      : const Color(0xFFB64D52);
+      ? const Color(0xFFFF8E9B)
+      : const Color(0xFFBC3446);
   List<FinanceRow> get periodTransactions => store
       .rows('transactions')
       .where(
@@ -307,7 +336,8 @@ class _FinanceShellState extends State<FinanceShell> {
     String? subtitle,
     Widget? action,
     required Widget child,
-  }) => Card(
+  }) => GlassPanel(
+    padding: EdgeInsets.zero,
     child: Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -323,8 +353,8 @@ class _FinanceShellState extends State<FinanceShell> {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -412,184 +442,233 @@ class _FinanceShellState extends State<FinanceShell> {
           ),
         ),
       );
-  Widget sidebar(bool rail) => Material(
-    color: Theme.of(context).colorScheme.surface,
+  Widget sidebar(bool rail) => GlassPanel(
+    padding: const EdgeInsets.all(8),
+    radius: 26,
     child: Column(
       children: [
-        SizedBox(
-          height: 76,
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: rail ? 0 : 10,
+            vertical: 20,
+          ),
           child: Row(
             mainAxisAlignment: rail
                 ? MainAxisAlignment.center
                 : MainAxisAlignment.start,
             children: [
-              if (!rail) const SizedBox(width: 20),
-              Icon(
-                Icons.account_balance_outlined,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              FinanceLogo(size: rail ? 38 : 44),
               if (!rail) ...[
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Text(
-                    'FINANCE\nTRACKER',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Finance Tracker',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -.6,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text('Personal finance', style: TextStyle(fontSize: 11)),
+                    ],
                   ),
                 ),
               ],
             ],
           ),
         ),
-        const Divider(height: 1),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.zero,
             children: [
               for (var i = 0; i < navigation.length; i++)
                 if (i < 14 || store.admin) ...[
                   if (navigation[i].$1.isNotEmpty && !rail)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 22, 8, 8),
+                      padding: const EdgeInsets.fromLTRB(12, 22, 8, 10),
                       child: Text(
                         navigation[i].$1,
                         style: TextStyle(
                           fontSize: 10,
                           letterSpacing: 1.2,
-                          fontWeight: FontWeight.w600,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
-                  Tooltip(
-                    message: navigation[i].$2,
-                    child: ListTile(
-                      dense: true,
-                      minLeadingWidth: 20,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: rail ? 8 : 12,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: page == i
+                            ? LinearGradient(
+                                colors: [
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: .25),
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: .10),
+                                ],
+                              )
+                            : null,
+                        border: Border.all(
+                          color: page == i
+                              ? Colors.white.withValues(alpha: .22)
+                              : Colors.transparent,
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
+                      child: Tooltip(
+                        message: navigation[i].$2,
+                        child: ListTile(
+                          dense: true,
+                          minLeadingWidth: 20,
+                          horizontalTitleGap: 12,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: rail ? 10 : 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          selected: page == i,
+                          selectedColor: Theme.of(context).colorScheme.primary,
+                          leading: Icon(navigation[i].$3, size: 22),
+                          title: rail
+                              ? null
+                              : Text(
+                                  navigation[i].$2,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: page == i
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                  ),
+                                ),
+                          onTap: () => go(i),
+                        ),
                       ),
-                      selected: page == i,
-                      selectedTileColor: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: .1),
-                      leading: Icon(navigation[i].$3, size: 20),
-                      title: rail
-                          ? null
-                          : Text(
-                              navigation[i].$2,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                      onTap: () => go(i),
                     ),
                   ),
                 ],
             ],
           ),
         ),
-        const Divider(height: 1),
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          leading: const Icon(Icons.help_outline, size: 20),
-          title: rail
-              ? null
-              : const Text(
-                  'Pusat keuangan Anda',
-                  style: TextStyle(fontSize: 12),
-                ),
-          subtitle: rail
-              ? null
-              : const Text(
-                  'v1.0 · Personal workspace',
-                  style: TextStyle(fontSize: 10),
+        const SizedBox(height: 12),
+        GlassPanel(
+          radius: 20,
+          blur: false,
+          padding: EdgeInsets.zero,
+          child: rail
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Icon(Icons.layers_outlined, size: 22),
+                )
+              : ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  leading: const Icon(Icons.layers_outlined, size: 22),
+                  title: const Text(
+                    'Pusat keuangan Anda',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Personal workspace',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 16),
                 ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
       ],
     ),
   );
-  Widget periodPicker() => Wrap(
-    crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 4,
-    children: [
-      IconButton(
-        tooltip: 'Periode sebelumnya',
-        onPressed: () => movePeriod(-1),
-        icon: const Icon(Icons.chevron_left, size: 20),
-      ),
-      PopupMenuButton<String>(
-        tooltip: 'Pilih periode',
-        initialValue: periodType,
-        onSelected: (v) async {
-          if (v == 'Custom') {
-            final range = await showDateRangePicker(
-              context: context,
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2100),
-              initialDateRange: DateTimeRange(
-                start: period.start,
-                end: period.end.subtract(const Duration(days: 1)),
-              ),
-            );
-            if (range != null) {
+  Widget periodPicker() => GlassPanel(
+    radius: 28,
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    blur: false,
+    child: Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      children: [
+        IconButton(
+          tooltip: 'Periode sebelumnya',
+          onPressed: () => movePeriod(-1),
+          icon: const Icon(Icons.chevron_left, size: 20),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'Pilih periode',
+          initialValue: periodType,
+          onSelected: (v) async {
+            if (v == 'Custom') {
+              final range = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+                initialDateRange: DateTimeRange(
+                  start: period.start,
+                  end: period.end.subtract(const Duration(days: 1)),
+                ),
+              );
+              if (range != null) {
+                update(() {
+                  customPeriod = Period(
+                    range.start,
+                    range.end.add(const Duration(days: 1)),
+                  );
+                  periodType = v;
+                  tablePage = 0;
+                });
+              }
+            } else {
               update(() {
-                customPeriod = Period(
-                  range.start,
-                  range.end.add(const Duration(days: 1)),
-                );
                 periodType = v;
+                customPeriod = null;
                 tablePage = 0;
               });
             }
-          } else {
-            update(() {
-              periodType = v;
-              customPeriod = null;
-              tablePage = 0;
-            });
-          }
-        },
-        itemBuilder: (c) => [
-          'Day',
-          'Week',
-          'Month',
-          'Year',
-          'Custom',
-        ].map((s) => PopupMenuItem(value: s, child: Text(s))).toList(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.calendar_today_outlined, size: 16),
-              const SizedBox(width: 8),
-              Text(
-                periodType == 'Month'
-                    ? DateFormat('MMMM yyyy', 'id_ID').format(anchor)
-                    : period.label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+          },
+          itemBuilder: (c) => [
+            'Day',
+            'Week',
+            'Month',
+            'Year',
+            'Custom',
+          ].map((s) => PopupMenuItem(value: s, child: Text(s))).toList(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today_outlined, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  periodType == 'Month'
+                      ? DateFormat('MMMM yyyy', 'id_ID').format(anchor)
+                      : period.label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(Icons.expand_more, size: 16),
-            ],
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, size: 16),
+              ],
+            ),
           ),
         ),
-      ),
-      IconButton(
-        tooltip: 'Periode berikutnya',
-        onPressed: () => movePeriod(1),
-        icon: const Icon(Icons.chevron_right, size: 20),
-      ),
-    ],
+        IconButton(
+          tooltip: 'Periode berikutnya',
+          onPressed: () => movePeriod(1),
+          icon: const Icon(Icons.chevron_right, size: 20),
+        ),
+      ],
+    ),
   );
   void movePeriod(int n) => update(() {
     if (customPeriod != null) {
@@ -611,35 +690,52 @@ class _FinanceShellState extends State<FinanceShell> {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: store,
-    builder: (c, _) => LayoutBuilder(
-      builder: (c, b) {
-        final mobile = b.maxWidth < 768;
-        final rail = b.maxWidth < 1200 ? !tabletExpanded : collapsed;
+    builder: (context, _) => LayoutBuilder(
+      builder: (context, box) {
+        final mobile = box.maxWidth < 768;
+        final rail = box.maxWidth < 1200 ? !tabletExpanded : collapsed;
+        final dark = Theme.of(context).brightness == Brightness.dark;
         return Scaffold(
           key: scaffold,
           drawer: mobile
-              ? Drawer(width: 280, child: SafeArea(child: sidebar(false)))
+              ? Drawer(
+                  width: 288,
+                  child: FinanceBackdrop(
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: sidebar(false),
+                      ),
+                    ),
+                  ),
+                )
               : null,
-          body: SafeArea(
-            child: Row(
-              children: [
-                if (!mobile) ...[
-                  SizedBox(width: rail ? 64 : 240, child: sidebar(rail)),
-                  const VerticalDivider(width: 1),
-                ],
-                Expanded(
-                  child: Column(
-                    children: [
-                      Material(
-                        color: Theme.of(context).colorScheme.surface,
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: mobile ? 12 : 24,
-                            vertical: 10,
+          body: FinanceBackdrop(
+            child: SafeArea(
+              child: Row(
+                children: [
+                  if (!mobile)
+                    SizedBox(
+                      width: rail ? 88 : 260,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                        child: sidebar(rail),
+                      ),
+                    ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            mobile ? 20 : 24,
+                            18,
+                            mobile ? 20 : 28,
+                            8,
                           ),
                           child: Row(
                             children: [
-                              IconButton(
+                              GlassIconButton(
+                                icon: mobile ? Icons.menu : Icons.menu_open,
                                 tooltip: mobile
                                     ? 'Buka navigasi'
                                     : 'Ciutkan navigasi',
@@ -648,7 +744,7 @@ class _FinanceShellState extends State<FinanceShell> {
                                     scaffold.currentState!.openDrawer();
                                   } else {
                                     update(() {
-                                      if (b.maxWidth < 1200) {
+                                      if (box.maxWidth < 1200) {
                                         tabletExpanded = !tabletExpanded;
                                       } else {
                                         collapsed = !collapsed;
@@ -660,52 +756,60 @@ class _FinanceShellState extends State<FinanceShell> {
                                     );
                                   }
                                 },
-                                icon: Icon(
-                                  mobile ? Icons.menu : Icons.menu_open,
-                                  size: 22,
-                                ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 14),
                               Expanded(
                                 child: Text(
                                   navigation[page].$2,
                                   style: TextStyle(
-                                    fontSize: mobile ? 18 : 21,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: mobile ? 23 : 28,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -.8,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (!mobile) periodPicker(),
-                              if (b.maxWidth >= 1200)
-                                IconButton(
+                              if (box.maxWidth >= 1200) ...[
+                                periodPicker(),
+                                const SizedBox(width: 16),
+                              ],
+                              if (box.maxWidth >= 1100) ...[
+                                GlassIconButton(
+                                  icon: Icons.search,
                                   tooltip: 'Cari transaksi',
                                   onPressed: () => go(1),
-                                  icon: const Icon(Icons.search, size: 20),
                                 ),
-                              if (b.maxWidth >= 1200)
-                                IconButton(
+                                const SizedBox(width: 10),
+                                GlassIconButton(
+                                  icon: Icons.notifications_none_outlined,
                                   tooltip: 'Notifikasi',
                                   onPressed: showNotifications,
-                                  icon: const Icon(
-                                    Icons.notifications_none,
-                                    size: 20,
-                                  ),
                                 ),
-                              IconButton(
-                                tooltip: 'Muat ulang',
-                                onPressed: store.loading ? null : store.refresh,
-                                icon: const Icon(Icons.refresh, size: 20),
-                              ),
+                                const SizedBox(width: 10),
+                              ],
+                              if (!mobile) ...[
+                                GlassIconButton(
+                                  icon: Icons.refresh,
+                                  tooltip: 'Muat ulang',
+                                  onPressed: store.loading
+                                      ? null
+                                      : store.refresh,
+                                ),
+                                const SizedBox(width: 10),
+                              ],
                               PopupMenuButton<String>(
                                 tooltip: 'Profil',
-                                onSelected: (v) {
-                                  if (v == 'logout') {
+                                onSelected: (value) {
+                                  if (value == 'logout') {
                                     store.client.auth.signOut();
+                                  } else if (value == 'refresh') {
+                                    store.refresh();
                                   } else {
                                     go(13);
                                   }
                                 },
-                                itemBuilder: (c) => [
+                                itemBuilder: (_) => [
                                   PopupMenuItem(
                                     enabled: false,
                                     child: Text(
@@ -718,82 +822,143 @@ class _FinanceShellState extends State<FinanceShell> {
                                     child: Text('Pengaturan'),
                                   ),
                                   const PopupMenuItem(
+                                    value: 'refresh',
+                                    child: Text('Muat ulang'),
+                                  ),
+                                  const PopupMenuItem(
                                     value: 'logout',
                                     child: Text('Keluar'),
                                   ),
                                 ],
-                                child: CircleAvatar(
-                                  radius: 17,
-                                  backgroundColor: Theme.of(
+                                child: GlassPanel(
+                                  radius: 24,
+                                  padding: EdgeInsets.zero,
+                                  blur: false,
+                                  tint: Theme.of(
                                     context,
-                                  ).colorScheme.primary.withValues(alpha: .12),
-                                  child: Text(
-                                    (store.profile['display_name'] ?? 'U')
-                                        .toString()
-                                        .substring(0, 1)
-                                        .toUpperCase(),
-                                    style: const TextStyle(fontSize: 13),
+                                  ).colorScheme.primary.withValues(alpha: .07),
+                                  child: SizedBox(
+                                    width: 44,
+                                    height: 44,
+                                    child: Center(
+                                      child: Text(
+                                        (store.profile['display_name'] ?? 'U')
+                                            .toString()
+                                            .substring(0, 1)
+                                            .toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w500,
+                                          color: dark
+                                              ? const Color(0xFFB9E2FF)
+                                              : const Color(0xFF22568C),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      const Divider(height: 1),
-                      if (store.loading || saving)
-                        const LinearProgressIndicator(minHeight: 2),
-                      if (mobile)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: periodPicker(),
-                        ),
-                      if (store.error != null)
-                        MaterialBanner(
-                          content: Text(
-                            'Koneksi belum tersedia: ${store.error}',
+                        if (box.maxWidth < 1200)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 10),
+                            child: periodPicker(),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: store.refresh,
-                              child: const Text('Coba lagi'),
+                        if (store.loading || saving)
+                          const LinearProgressIndicator(minHeight: 2),
+                        if (store.error != null)
+                          MaterialBanner(
+                            content: Text(
+                              'Koneksi belum tersedia: ${store.error}',
                             ),
-                          ],
-                        ),
-                      Expanded(
-                        child: store.loading && store.profile.isEmpty
-                            ? const Center(child: CircularProgressIndicator())
-                            : store.profile['must_change_password'] == true
-                            ? SingleChildScrollView(
-                                padding: const EdgeInsets.all(24),
-                                child: passwordPanel(forced: true),
-                              )
-                            : RefreshIndicator(
-                                onRefresh: store.refresh,
-                                child: SingleChildScrollView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  padding: EdgeInsets.all(mobile ? 16 : 24),
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minHeight: b.maxHeight - 180,
+                            actions: [
+                              TextButton(
+                                onPressed: store.refresh,
+                                child: const Text('Coba lagi'),
+                              ),
+                            ],
+                          ),
+                        Expanded(
+                          child: store.loading && store.profile.isEmpty
+                              ? const Center(child: CircularProgressIndicator())
+                              : store.profile['must_change_password'] == true
+                              ? SingleChildScrollView(
+                                  padding: const EdgeInsets.all(24),
+                                  child: passwordPanel(forced: true),
+                                )
+                              : RefreshIndicator(
+                                  onRefresh: store.refresh,
+                                  child: SingleChildScrollView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: EdgeInsets.fromLTRB(
+                                      mobile ? 16 : 24,
+                                      12,
+                                      mobile ? 16 : 28,
+                                      24,
                                     ),
-                                    child: pageContent(),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minHeight: box.maxHeight - 200,
+                                      ),
+                                      child: pageContent(),
+                                    ),
                                   ),
                                 ),
-                              ),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          floatingActionButton: page == 0 || page == 1
-              ? FloatingActionButton.extended(
-                  onPressed: () => transactionEditor(),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Transaksi'),
+          floatingActionButton:
+              (page == 0 || page == 1) &&
+                  store.profile['must_change_password'] != true
+              ? SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: FloatingActionButton(
+                    tooltip: 'Tambah transaksi',
+                    onPressed: () => transactionEditor(),
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(mobile ? 32 : 22),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(mobile ? 32 : 22),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF79CAFF),
+                            Color(0xFF197BFC),
+                            Color(0xFF0858D2),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: .55),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF0775EF,
+                            ).withValues(alpha: dark ? .45 : .25),
+                            blurRadius: 22,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.add, size: 34, color: Colors.white),
+                      ),
+                    ),
+                  ),
                 )
               : null,
         );

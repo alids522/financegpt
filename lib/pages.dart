@@ -186,228 +186,7 @@ extension _FinancePages on _FinanceShellState {
           ],
         ),
       );
-  Widget dashboard() {
-    final parts = <String, Widget>{
-      'summary': LayoutBuilder(
-        builder: (context, box) => box.maxWidth < 600
-            ? Column(
-                children: [
-                  kpi(
-                    'Total saldo',
-                    balance,
-                    note:
-                        'Arus kas bersih ${money(income - expense, store.currency)}',
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: compactKpi('Pemasukan', income, positive),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: compactKpi('Pengeluaran', expense, negative),
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            : responsive([
-                kpi(
-                  'Total saldo',
-                  balance,
-                  note: 'Aset kas · ${store.currency}',
-                ),
-                kpi(
-                  'Pemasukan',
-                  income,
-                  color: positive,
-                  note: 'Transaksi posted',
-                ),
-                kpi(
-                  'Pengeluaran',
-                  expense,
-                  color: negative,
-                  note: 'Setelah refund',
-                ),
-                kpi(
-                  'Arus kas bersih',
-                  income - expense,
-                  note: 'Pemasukan − pengeluaran',
-                  color: income >= expense ? positive : negative,
-                ),
-              ], min: 220),
-      ),
-      'cashflow': section(
-        'Arus kas',
-        subtitle: 'Aktual & proyeksi · ${period.label}',
-        action: TextButton(
-          onPressed: () => go(5),
-          child: const Text('Lihat forecast'),
-        ),
-        child: cashflowChart(),
-      ),
-      'budgets': section(
-        'Budget vs Actual',
-        subtitle: 'Rencana, realisasi, dan proyeksi akhir periode',
-        action: TextButton(
-          onPressed: () => go(4),
-          child: const Text('Semua budget'),
-        ),
-        child: currentBudgets.isEmpty
-            ? empty(
-                'Belum ada budget untuk periode ini.',
-                action: 'Buat budget',
-                onPressed: () => budgetEditor(),
-              )
-            : Column(children: currentBudgets.take(4).map(budgetRow).toList()),
-      ),
-      'recent': section(
-        'Transaksi terakhir',
-        action: TextButton(
-          onPressed: () => go(1),
-          child: const Text('Lihat semua'),
-        ),
-        child: periodTransactions.isEmpty
-            ? empty(
-                'Mulai dengan mencatat transaksi pertama Anda.',
-                action: 'Tambah transaksi',
-                onPressed: () => transactionEditor(),
-              )
-            : Column(
-                children: periodTransactions
-                    .take(5)
-                    .map(transactionTile)
-                    .toList(),
-              ),
-      ),
-      'upcoming': section(
-        'Akan datang',
-        subtitle: 'Tagihan, utang jatuh tempo, dan tabungan',
-        child: Column(
-          children: [
-            ...store
-                .rows('recurring_rules')
-                .where((r) => r['active'] == true)
-                .take(3)
-                .map(
-                  (r) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.event_repeat_outlined, size: 20),
-                    title: Text(r['name']),
-                    subtitle: Text(dateLabel(r['next_at'])),
-                    trailing: Text(
-                      money(
-                        r['payload_json']['amount'],
-                        r['payload_json']['currency'] ?? 'IDR',
-                      ),
-                    ),
-                  ),
-                ),
-            ...store
-                .rows('debts')
-                .take(3)
-                .map(
-                  (r) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.credit_card_outlined, size: 20),
-                    title: Text(r['name']),
-                    subtitle: Text('Jatuh tempo ${dateLabel(r['due'])}'),
-                    trailing: Text(money(outstanding(r), r['currency'])),
-                  ),
-                ),
-            if (store.rows('recurring_rules').isEmpty &&
-                store.rows('debts').isEmpty)
-              empty('Tidak ada tagihan terjadwal.'),
-          ],
-        ),
-      ),
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        pageHeading(
-          'Keuangan dalam kendali.',
-          'Ringkasan Anda · ${period.label}',
-          action: OutlinedButton.icon(
-            onPressed: dashboardCustomize,
-            icon: const Icon(Icons.tune, size: 18),
-            label: const Text('Atur tampilan'),
-          ),
-        ),
-        LayoutBuilder(
-          builder: (context, box) {
-            final visible = dashboardOrder
-                .where((key) => !hiddenWidgets.contains(key))
-                .toList();
-            final rows = <Widget>[];
-            for (var i = 0; i < visible.length; i++) {
-              final key = visible[i];
-              if (box.maxWidth >= 1000 &&
-                  i + 1 < visible.length &&
-                  ((key == 'cashflow' && visible[i + 1] == 'budgets') ||
-                      (key == 'recent' && visible[i + 1] == 'upcoming'))) {
-                rows.add(
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(flex: 2, child: parts[key]!),
-                      const SizedBox(width: 20),
-                      Expanded(child: parts[visible[++i]]!),
-                    ],
-                  ),
-                );
-              } else {
-                rows.add(parts[key]!);
-              }
-              rows.add(const SizedBox(height: 20));
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: rows,
-            );
-          },
-        ),
-        if (store.rows('accounts').isEmpty)
-          section(
-            'Siap memulai?',
-            subtitle: 'Tambahkan Cash, rekening bank, atau e-wallet Anda.',
-            child: FilledButton.icon(
-              onPressed: () => accountEditor(),
-              icon: const Icon(Icons.add),
-              label: const Text('Tambah akun'),
-            ),
-          ),
-        const SizedBox(height: 64),
-      ],
-    );
-  }
-
-  Widget compactKpi(String label, int value, Color color) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              money(value, store.currency),
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: color,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+  Widget dashboard() => glassDashboard();
 
   Future<void> dashboardCustomize() async {
     await showDialog<void>(
@@ -429,6 +208,9 @@ extension _FinancePages on _FinanceShellState {
                           title: Text(
                             {
                               'summary': 'Ringkasan saldo',
+                              'accounts': 'Rekening & dompet',
+                              'metrics': 'Pemasukan & pengeluaran (mobile)',
+                              'categories': 'Ringkasan kategori',
                               'cashflow': 'Arus kas',
                               'budgets': 'Budget vs Actual',
                               'recent': 'Transaksi terakhir',
@@ -495,7 +277,11 @@ extension _FinancePages on _FinanceShellState {
     );
   }
 
-  Widget cashflowChart({bool forecastLine = false}) {
+  Widget cashflowChart({
+    bool forecastLine = false,
+    bool expenseLine = false,
+    bool compact = false,
+  }) {
     if (posted.isEmpty) {
       return empty('Grafik akan muncul setelah ada transaksi posted.');
     }
@@ -508,7 +294,7 @@ extension _FinancePages on _FinanceShellState {
         final d = localTime(t['effective_at']);
         return d.year == day.year && d.month == day.month && d.day == day.day;
       }).toList();
-      acc += forecastLine
+      acc += (forecastLine || expenseLine)
           ? sumType('expense', rows)
           : sumType('income', rows) - sumType('expense', rows);
       if (!day.isAfter(DateTime.now())) {
@@ -516,25 +302,37 @@ extension _FinancePages on _FinanceShellState {
       }
     }
     if (values.isEmpty) return empty('Tidak ada data aktual.');
-    final future = forecastLine
+    final future = (forecastLine || compact)
         ? [
             values.last,
-            FlSpot((n - 1).toDouble(), forecast.estimate.toDouble()),
+            FlSpot(
+              (n - 1).toDouble(),
+              (forecastLine || expenseLine
+                      ? forecast.estimate
+                      : income -
+                            expense +
+                            scheduledIncome -
+                            (forecast.estimate - expense))
+                  .toDouble(),
+            ),
           ]
         : <FlSpot>[];
     final maxValue = [
       1.0,
       ...values.map((x) => x.y.abs()),
-      forecastLine ? forecast.estimate.abs().toDouble() : 1.0,
+      ...future.map((x) => x.y.abs()),
     ].reduce(math.max);
     return Column(
       children: [
         SizedBox(
-          height: 240,
+          height: compact ? 160 : 240,
           child: LineChart(
             LineChartData(
               minX: 0,
-              minY: math.min(0, values.map((v) => v.y).reduce(math.min)),
+              minY: math.min(
+                0,
+                [...values, ...future].map((v) => v.y).reduce(math.min),
+              ),
               maxY:
                   math.max(
                     maxValue,
@@ -559,7 +357,8 @@ extension _FinancePages on _FinanceShellState {
                 horizontalInterval: maxValue / 4,
                 getDrawingHorizontalLine: (_) => FlLine(
                   color: Theme.of(context).dividerColor,
-                  strokeWidth: .5,
+                  strokeWidth: .6,
+                  dashArray: [4, 4],
                 ),
               ),
               borderData: FlBorderData(show: false),
@@ -583,7 +382,8 @@ extension _FinancePages on _FinanceShellState {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: math.max(1, n / 6),
+                    interval: math.max(1, n / (compact ? 4 : 6)),
+                    maxIncluded: false,
                     getTitlesWidget: (v, _) => Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
@@ -599,11 +399,15 @@ extension _FinancePages on _FinanceShellState {
               ),
               lineTouchData: LineTouchData(
                 touchTooltipData: LineTouchTooltipData(
+                  getTooltipColor: (_) => Theme.of(context).colorScheme.surface,
                   getTooltipItems: (spots) => spots
                       .map(
                         (s) => LineTooltipItem(
                           money(s.y.round(), store.currency),
-                          const TextStyle(color: Colors.white, fontSize: 12),
+                          TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 12,
+                          ),
                         ),
                       )
                       .toList(),
@@ -612,22 +416,34 @@ extension _FinancePages on _FinanceShellState {
               lineBarsData: [
                 LineChartBarData(
                   spots: values,
-                  isCurved: false,
+                  isCurved: true,
+                  preventCurveOverShooting: true,
                   color: Theme.of(context).colorScheme.primary,
-                  barWidth: 2,
+                  barWidth: 2.5,
                   dotData: const FlDotData(show: false),
                   belowBarData: BarAreaData(
                     show: true,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: .05),
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: .25),
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: .015),
+                      ],
+                    ),
                   ),
                 ),
                 if (future.isNotEmpty)
                   LineChartBarData(
                     spots: future,
-                    color: const Color(0xFFA76A22),
-                    barWidth: 2,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: .6),
+                    barWidth: 1.5,
                     dashArray: [6, 5],
                     dotData: const FlDotData(show: false),
                   ),
@@ -637,97 +453,137 @@ extension _FinancePages on _FinanceShellState {
         ),
         const SizedBox(height: 14),
         Wrap(
-          spacing: 20,
+          spacing: 18,
+          runSpacing: 8,
           children: [
-            Text(
-              '━ Aktual · ${store.currency}',
-              style: const TextStyle(fontSize: 12),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Aktual · ${store.currency}',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ],
             ),
-            if (forecastLine)
-              const Text(
-                '┄ Forecast · estimasi',
-                style: TextStyle(fontSize: 12),
+            if (forecastLine || compact)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 2,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: .6),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Proyeksi · estimasi',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ],
               ),
           ],
         ),
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: const Text(
-            'Lihat data grafik',
-            style: TextStyle(fontSize: 12),
-          ),
-          children: values
-              .map(
-                (s) => ListTile(
-                  dense: true,
-                  title: Text(
-                    dateLabel(
-                      period.start
-                          .add(Duration(days: s.x.toInt()))
-                          .toIso8601String(),
+        if (!compact)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Lihat data grafik',
+              style: TextStyle(fontSize: 12),
+            ),
+            children: values
+                .map(
+                  (s) => ListTile(
+                    dense: true,
+                    title: Text(
+                      dateLabel(
+                        period.start
+                            .add(Duration(days: s.x.toInt()))
+                            .toIso8601String(),
+                      ),
                     ),
+                    trailing: Text(money(s.y.round(), store.currency)),
                   ),
-                  trailing: Text(money(s.y.round(), store.currency)),
-                ),
-              )
-              .toList(),
-        ),
+                )
+                .toList(),
+          ),
       ],
     );
   }
 
-  Widget transactionTile(FinanceRow t) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    minVerticalPadding: 10,
-    leading: Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(
-        t['type'] == 'transfer'
-            ? Icons.swap_horiz
-            : t['type'] == 'income'
-            ? Icons.south_west
-            : Icons.north_east,
-        size: 19,
-      ),
-    ),
-    title: Text(
-      (t['description'] as String? ?? '').isNotEmpty
-          ? t['description']
-          : store.name('categories', t['category_id']),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    ),
-    subtitle: Text(
-      '${store.name('accounts', t['account_id'])} · ${dateLabel(t['effective_at'])}\n${t['status']} ${t['source'] == 'agent' ? '· Agent' : ''}',
-      style: const TextStyle(fontSize: 11),
-    ),
-    isThreeLine: true,
-    trailing: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 160),
-      child: Text(
-        '${t['type'] == 'expense'
-            ? '−'
-            : t['type'] == 'income'
-            ? '+'
-            : ''}${money(t['amount'], t['currency'])}',
-        textAlign: TextAlign.right,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
+  Widget transactionTile(FinanceRow t, {bool compact = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: GlassPanel(
+      radius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      blur: false,
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        minVerticalPadding: compact ? 6 : 10,
+        leading: GlassIcon(
+          t['type'] == 'transfer'
+              ? Icons.account_balance_wallet_outlined
+              : t['type'] == 'income'
+              ? Icons.south_rounded
+              : store
+                    .name('categories', t['category_id'])
+                    .toLowerCase()
+                    .contains('makan')
+              ? Icons.restaurant_outlined
+              : Icons.north_east_rounded,
           color: t['type'] == 'expense'
               ? negative
               : t['type'] == 'income'
               ? positive
-              : null,
-          fontSize: 13,
+              : Theme.of(context).colorScheme.primary,
         ),
+        title: Text(
+          (t['description'] as String? ?? '').isNotEmpty
+              ? t['description']
+              : store.name('categories', t['category_id']),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          compact
+              ? '${store.name('accounts', t['account_id'])} · ${dateLabel(t['effective_at'])}'
+              : '${store.name('accounts', t['account_id'])} · ${dateLabel(t['effective_at'])}\n${t['status']} ${t['source'] == 'agent' ? '· Agent' : ''}',
+          style: const TextStyle(fontSize: 11),
+        ),
+        isThreeLine: !compact,
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(
+            '${t['type'] == 'expense'
+                ? '−'
+                : t['type'] == 'income'
+                ? '+'
+                : ''}${money(t['amount'], t['currency'])}',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: t['type'] == 'expense'
+                  ? negative
+                  : t['type'] == 'income'
+                  ? positive
+                  : null,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        onTap: () => transactionDetail(t),
       ),
     ),
-    onTap: () => transactionDetail(t),
   );
   List<FinanceRow> get filteredTransactions {
     final categoryIds = {filter.category, ...filter.categories};

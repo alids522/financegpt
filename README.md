@@ -1,6 +1,8 @@
 # Finance Tracker
 
-Flutter Web, Android, and iOS source implementing the [Finance Tracker PRD v1.0](docs/Finance_Tracker_PRD_v1.0.md). Indonesian UI, Inter typography, restrained light/dark/system themes, desktop sidebar/tablet rail/mobile drawer, and no bottom navigation.
+Flutter Web, Android, and iOS source implementing the [Finance Tracker PRD v1.0](docs/Finance_Tracker_PRD_v1.0.md). Indonesian UI, Inter typography, translucent glass light/dark/system themes, desktop sidebar/tablet rail/mobile drawer, and no bottom navigation.
+
+The [visual refresh](docs/UI_REFRESH.md) follows the user-provided reference images, with blue glass surfaces, flowing backgrounds, rounded cards, a horizontal account carousel, balance visibility, and responsive dashboard charts. This newer visual direction supersedes the original PRD appearance tokens.
 
 ## Download
 

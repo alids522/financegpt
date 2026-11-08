@@ -129,90 +129,105 @@ void main() {
       testWidgets('sidebar and all P0 pages fit $width $brightness', (
         tester,
       ) async {
-        tester.view.physicalSize = Size(width, 1000);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        SharedPreferences.setMockInitialValues({});
-        final preferences = await SharedPreferences.getInstance();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: financeTheme(brightness),
-            home: FinanceShell(
-              preferences: preferences,
-              onTheme: (_) {},
-              initialStore: FixtureStore(),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(find.byType(BottomNavigationBar), findsNothing);
-        expect(tester.takeException(), isNull);
-        if (const bool.fromEnvironment('GENERATE_PREVIEWS')) {
-          await expectLater(
-            find.byType(FinanceShell),
-            matchesGoldenFile(
-              'previews/dashboard-${width.toInt()}-${brightness.name}.png',
+        final previousShadows = debugDisableShadows;
+        debugDisableShadows = false;
+        try {
+          tester.view.physicalSize = Size(width, 1000);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          SharedPreferences.setMockInitialValues({});
+          final preferences = await SharedPreferences.getInstance();
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: financeTheme(brightness),
+              home: FinanceShell(
+                preferences: preferences,
+                onTheme: (_) {},
+                initialStore: FixtureStore(),
+              ),
             ),
           );
-        }
-        for (final page in [
-          'Transactions',
-          'Accounts & Wallets',
-          'Analytics',
-          'Budgets',
-          'Forecast',
-          'Import & Export',
-          'API & AI Agents',
-          'Settings',
-        ]) {
-          if (width < 768) {
-            await tester.tap(find.byTooltip('Buka navigasi'));
-            await tester.pumpAndSettle();
-          }
-          final item = width >= 768 && width < 1200
-              ? find.byTooltip(page)
-              : find.text(page);
-          await tester.scrollUntilVisible(
-            item,
-            150,
-            scrollable: width < 768
-                ? find
-                      .descendant(
-                        of: find.byType(Drawer),
-                        matching: find.byType(Scrollable),
-                      )
-                      .first
-                : find.byType(Scrollable).first,
-          );
-          await tester.tap(item);
           await tester.pumpAndSettle();
-          if (page == 'Transactions') {
-            await tester.ensureVisible(find.text('Filter lanjutan'));
-            await tester.tap(find.text('Filter lanjutan'));
-            await tester.pumpAndSettle();
-            await tester.tap(find.text('Terapkan'));
-            await tester.pumpAndSettle();
-            expect(find.text('Filter transaksi'), findsNothing);
-            await tester.ensureVisible(find.text('Tambah transaksi'));
-            await tester.tap(find.text('Tambah transaksi'));
-            await tester.pumpAndSettle();
-            await tester.tap(find.text('Simpan'));
-            await tester.pumpAndSettle();
-            expect(find.text('Pilih kategori.'), findsOneWidget);
-            await tester.enterText(find.byType(TextFormField).first, '35000');
-            await tester.tap(find.byTooltip('Tutup'));
-            await tester.pumpAndSettle();
-            expect(find.text('Buang perubahan?'), findsOneWidget);
-            await tester.tap(find.text('Buang perubahan'));
-            await tester.pumpAndSettle();
-            expect(find.byType(TransactionEditor), findsNothing);
+          expect(find.byType(BottomNavigationBar), findsNothing);
+          expect(tester.takeException(), isNull);
+          if (const bool.fromEnvironment('GENERATE_PREVIEWS')) {
+            await expectLater(
+              find.byType(FinanceShell),
+              matchesGoldenFile(
+                'previews/dashboard-${width.toInt()}-${brightness.name}.png',
+              ),
+            );
           }
-          expect(
-            tester.takeException(),
-            isNull,
-            reason: '$page at $width $brightness',
-          );
+          await tester.tap(find.byTooltip('Sembunyikan total saldo'));
+          await tester.pumpAndSettle();
+          expect(find.text('••••••••'), findsOneWidget);
+          await tester.tap(find.byTooltip('Tampilkan total saldo'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Pengeluaran').last);
+          await tester.tap(find.text('Pengeluaran').last);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          for (final page in [
+            'Transactions',
+            'Accounts & Wallets',
+            'Analytics',
+            'Budgets',
+            'Forecast',
+            'Import & Export',
+            'API & AI Agents',
+            'Settings',
+          ]) {
+            if (width < 768) {
+              await tester.tap(find.byTooltip('Buka navigasi'));
+              await tester.pumpAndSettle();
+            }
+            final item = width >= 768 && width < 1200
+                ? find.byTooltip(page)
+                : find.text(page);
+            await tester.scrollUntilVisible(
+              item,
+              150,
+              scrollable: width < 768
+                  ? find
+                        .descendant(
+                          of: find.byType(Drawer),
+                          matching: find.byType(Scrollable),
+                        )
+                        .first
+                  : find.byType(Scrollable).first,
+            );
+            await tester.tap(item);
+            await tester.pumpAndSettle();
+            if (page == 'Transactions') {
+              await tester.ensureVisible(find.text('Filter lanjutan'));
+              await tester.tap(find.text('Filter lanjutan'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text('Terapkan'));
+              await tester.pumpAndSettle();
+              expect(find.text('Filter transaksi'), findsNothing);
+              await tester.ensureVisible(find.text('Tambah transaksi'));
+              await tester.tap(find.text('Tambah transaksi'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text('Simpan'));
+              await tester.pumpAndSettle();
+              expect(find.text('Pilih kategori.'), findsOneWidget);
+              await tester.enterText(find.byType(TextFormField).first, '35000');
+              await tester.tap(find.byTooltip('Tutup'));
+              await tester.pumpAndSettle();
+              expect(find.text('Buang perubahan?'), findsOneWidget);
+              await tester.tap(find.text('Buang perubahan'));
+              await tester.pumpAndSettle();
+              expect(find.byType(TransactionEditor), findsNothing);
+            }
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$page at $width $brightness',
+            );
+          }
+        } finally {
+          debugDisableShadows = previousShadows;
         }
       });
     }

@@ -9,6 +9,7 @@ import 'config.dart';
 import 'store.dart';
 import 'theme.dart';
 import 'shell.dart';
+import 'glass.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -151,196 +152,197 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 430),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.account_balance_outlined,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 30,
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'FINANCE TRACKER',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.3,
+    body: FinanceBackdrop(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const FinanceLogo(size: 46),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Finance Tracker',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.4,
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 48),
+                Text(
+                  signup ? 'Mulai kelola keuangan.' : 'Selamat datang kembali.',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
-              ),
-              const SizedBox(height: 48),
-              Text(
-                signup ? 'Mulai kelola keuangan.' : 'Selamat datang kembali.',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w600,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                signup
-                    ? 'Satu tempat untuk keuangan yang lebih terarah.'
-                    : 'Masuk untuk melihat keuangan Anda.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                const SizedBox(height: 8),
+                Text(
+                  signup
+                      ? 'Satu tempat untuk keuangan yang lebih terarah.'
+                      : 'Masuk untuk melihat keuangan Anda.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 28),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Form(
-                    key: form,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (signup) ...[
-                          TextFormField(
-                            controller: username,
-                            decoration: const InputDecoration(
-                              labelText: 'Username',
+                const SizedBox(height: 28),
+                GlassPanel(
+                  padding: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Form(
+                      key: form,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (signup) ...[
+                            TextFormField(
+                              controller: username,
+                              decoration: const InputDecoration(
+                                labelText: 'Username',
+                              ),
+                              textInputAction: TextInputAction.next,
+                              validator: (v) =>
+                                  RegExp(
+                                    r'^[a-zA-Z0-9_]{3,24}$',
+                                  ).hasMatch(v ?? '')
+                                  ? null
+                                  : '3–24 huruf, angka, atau underscore.',
                             ),
+                            const SizedBox(height: 16),
+                          ],
+                          TextFormField(
+                            controller: email,
+                            decoration: InputDecoration(
+                              labelText: signup
+                                  ? 'Email'
+                                  : 'Username atau Email',
+                            ),
+                            keyboardType: signup
+                                ? TextInputType.emailAddress
+                                : TextInputType.text,
                             textInputAction: TextInputAction.next,
-                            validator: (v) =>
-                                RegExp(
-                                  r'^[a-zA-Z0-9_]{3,24}$',
-                                ).hasMatch(v ?? '')
-                                ? null
-                                : '3–24 huruf, angka, atau underscore.',
+                            validator: (v) => signup
+                                ? (RegExp(
+                                        r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                      ).hasMatch(v ?? '')
+                                      ? null
+                                      : 'Masukkan email yang valid.')
+                                : (v!.trim().isEmpty
+                                      ? 'Masukkan username atau email.'
+                                      : null),
                           ),
-                          const SizedBox(height: 16),
-                        ],
-                        TextFormField(
-                          controller: email,
-                          decoration: InputDecoration(
-                            labelText: signup ? 'Email' : 'Username atau Email',
-                          ),
-                          keyboardType: signup
-                              ? TextInputType.emailAddress
-                              : TextInputType.text,
-                          textInputAction: TextInputAction.next,
-                          validator: (v) => signup
-                              ? (RegExp(
-                                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                                    ).hasMatch(v ?? '')
-                                    ? null
-                                    : 'Masukkan email yang valid.')
-                              : (v!.trim().isEmpty
-                                    ? 'Masukkan username atau email.'
-                                    : null),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: password,
-                          obscureText: !visible,
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            helperText: signup
-                                ? 'Minimal 8 karakter; disarankan 12 atau lebih.'
-                                : null,
-                            suffixIcon: IconButton(
-                              tooltip: visible
-                                  ? 'Sembunyikan password'
-                                  : 'Tampilkan password',
-                              onPressed: () =>
-                                  setState(() => visible = !visible),
-                              icon: Icon(
-                                visible
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                            ),
-                          ),
-                          onFieldSubmitted: (_) {
-                            if (!signup) submit();
-                          },
-                          validator: (v) {
-                            if ((v ?? '').length < 8) {
-                              return 'Minimal 8 karakter.';
-                            }
-                            if (signup &&
-                                (v == username.text || v == email.text)) {
-                              return 'Password harus berbeda dari identitas Anda.';
-                            }
-                            return null;
-                          },
-                        ),
-                        if (signup) ...[
                           const SizedBox(height: 16),
                           TextFormField(
-                            controller: confirm,
+                            controller: password,
                             obscureText: !visible,
-                            decoration: const InputDecoration(
-                              labelText: 'Konfirmasi password',
-                            ),
-                            validator: (v) => v == password.text
-                                ? null
-                                : 'Password belum sama.',
-                            onFieldSubmitted: (_) => submit(),
-                          ),
-                        ],
-                        if (error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: Text(
-                              error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              helperText: signup
+                                  ? 'Minimal 8 karakter; disarankan 12 atau lebih.'
+                                  : null,
+                              suffixIcon: IconButton(
+                                tooltip: visible
+                                    ? 'Sembunyikan password'
+                                    : 'Tampilkan password',
+                                onPressed: () =>
+                                    setState(() => visible = !visible),
+                                icon: Icon(
+                                  visible
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
                               ),
                             ),
+                            onFieldSubmitted: (_) {
+                              if (!signup) submit();
+                            },
+                            validator: (v) {
+                              if ((v ?? '').length < 8) {
+                                return 'Minimal 8 karakter.';
+                              }
+                              if (signup &&
+                                  (v == username.text || v == email.text)) {
+                                return 'Password harus berbeda dari identitas Anda.';
+                              }
+                              return null;
+                            },
                           ),
-                        const SizedBox(height: 24),
-                        FilledButton(
-                          onPressed: busy ? null : submit,
-                          child: busy
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Text(signup ? 'Buat akun' : 'Masuk'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: busy
-                              ? null
-                              : () {
-                                  setState(() {
-                                    signup = !signup;
-                                    error = null;
-                                  });
-                                  form.currentState?.reset();
-                                },
-                          child: Text(
-                            signup
-                                ? 'Sudah punya akun? Masuk'
-                                : 'Belum punya akun? Daftar',
+                          if (signup) ...[
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: confirm,
+                              obscureText: !visible,
+                              decoration: const InputDecoration(
+                                labelText: 'Konfirmasi password',
+                              ),
+                              validator: (v) => v == password.text
+                                  ? null
+                                  : 'Password belum sama.',
+                              onFieldSubmitted: (_) => submit(),
+                            ),
+                          ],
+                          if (error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: Text(
+                                error!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 24),
+                          FilledButton(
+                            onPressed: busy ? null : submit,
+                            child: busy
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(signup ? 'Buat akun' : 'Masuk'),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: busy
+                                ? null
+                                : () {
+                                    setState(() {
+                                      signup = !signup;
+                                      error = null;
+                                    });
+                                    form.currentState?.reset();
+                                  },
+                            child: Text(
+                              signup
+                                  ? 'Sudah punya akun? Masuk'
+                                  : 'Belum punya akun? Daftar',
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                signup
-                    ? 'Akun langsung aktif tanpa konfirmasi email. Pastikan alamat email milik Anda.'
-                    : 'Butuh bantuan akses? Hubungi administrator.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+                const SizedBox(height: 24),
+                Text(
+                  signup
+                      ? 'Akun langsung aktif tanpa konfirmasi email. Pastikan alamat email milik Anda.'
+                      : 'Butuh bantuan akses? Hubungi administrator.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
         ),
       ),
