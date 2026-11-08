@@ -525,6 +525,7 @@ extension _FinancePages on _FinanceShellState {
                   SizedBox(
                     width: 160,
                     child: DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: filter.type,
                       decoration: const InputDecoration(labelText: 'Tipe'),
                       items: ['', 'expense', 'income', 'transfer', 'adjustment']

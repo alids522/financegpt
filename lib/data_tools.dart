@@ -461,14 +461,12 @@ extension _FinanceDataTools on _FinanceShellState {
       String rawText = '';
       final pdf = file.extension?.toLowerCase() == 'pdf';
       if (pdf) {
-        final doc = await PdfDocument.openData(file.bytes!);
-        try {
-          for (final p in doc.pages) {
-            rawText += '${(await p.loadText())?.fullText ?? ''}\n';
-          }
-        } finally {
-          await doc.dispose();
-        }
+        final extracted = await store.api(
+          'imports/extract-pdf',
+          method: 'POST',
+          body: {'data': base64Encode(file.bytes!)},
+        );
+        rawText = extracted['text'];
         if (rawText.trim().length < 15) {
           throw Exception(
             'PDF ini tidak mempunyai teks yang dapat diekstrak. Scan membutuhkan OCR; gunakan CSV atau PDF digital.',

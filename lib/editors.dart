@@ -337,6 +337,13 @@ extension _FinanceEditors on _FinanceShellState {
 
   Future<void> showAttachment(FinanceRow t) async {
     try {
+      if (t['attachment_path'].toString().endsWith('.pdf')) {
+        final bytes = await store.client.storage
+            .from('financegpt-private')
+            .download(t['attachment_path']);
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
+        return;
+      }
       final url = await store.client.storage
           .from('financegpt-private')
           .createSignedUrl(t['attachment_path'], 120);
@@ -357,11 +364,7 @@ extension _FinanceEditors on _FinanceShellState {
                     icon: const Icon(Icons.close),
                   ),
                 ),
-                Expanded(
-                  child: t['attachment_path'].toString().endsWith('.pdf')
-                      ? PdfViewer.uri(Uri.parse(url))
-                      : InteractiveViewer(child: Image.network(url)),
-                ),
+                Expanded(child: InteractiveViewer(child: Image.network(url))),
               ],
             ),
           ),

@@ -10,7 +10,6 @@ import 'package:file_saver/file_saver.dart';
 import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:pdfrx/pdfrx.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'domain.dart';
 import 'store.dart';
@@ -40,19 +39,22 @@ const navigation = <(String, String, IconData)>[
 ];
 
 class FinanceShell extends StatefulWidget {
+  final FinanceStore? initialStore;
   final ValueChanged<String> onTheme;
   final SharedPreferences preferences;
   const FinanceShell({
     super.key,
     required this.onTheme,
     required this.preferences,
+    this.initialStore,
   });
   @override
   State<FinanceShell> createState() => _FinanceShellState();
 }
 
 class _FinanceShellState extends State<FinanceShell> {
-  late final store = FinanceStore(Supabase.instance.client);
+  late final store =
+      widget.initialStore ?? FinanceStore(Supabase.instance.client);
   int page = 0, tablePage = 0;
   late bool collapsed = widget.preferences.getBool('sidebarCollapsed') ?? false;
   DateTime anchor = DateTime.now();
