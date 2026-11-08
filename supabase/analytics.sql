@@ -1,0 +1,20 @@
+begin;
+create function financegpt.analytics_data(uid uuid,period_start timestamptz,period_end timestamptz,currency_code text default 'IDR',allowed_accounts uuid[] default '{}',allowed_categories uuid[] default '{}')returns jsonb language sql security definer set search_path='' as $$
+with base as(
+ select t.*from financegpt.transactions t where t.user_id=uid and t.status='posted'and t.currency=currency_code and t.effective_at>=period_start and t.effective_at<period_end and(cardinality(allowed_accounts)=0 or t.account_id=any(allowed_accounts))and(cardinality(allowed_categories)=0 or t.category_id=any(allowed_categories))
+),allocations as(
+ select t.id,t.type,s.category_id,s.amount*case when t.reversal_of is null then 1 else -1 end amount from base t join financegpt.transaction_splits s on s.transaction_id=t.id
+ union all select t.id,t.type,t.category_id,t.amount*case when t.reversal_of is null then 1 else -1 end from base t where not exists(select 1 from financegpt.transaction_splits s where s.transaction_id=t.id)
+),totals as(select coalesce(sum(case when type='income'then amount*case when reversal_of is null then 1 else -1 end else 0 end),0)income,coalesce(sum(case when type='expense'then amount*case when reversal_of is null then 1 else -1 end else 0 end),0)expense,count(*)count from base),prior as(
+ select coalesce(sum(case when t.type='expense'then t.amount*case when t.reversal_of is null then 1 else -1 end else 0 end),0)expense from financegpt.transactions t where t.user_id=uid and t.status='posted'and t.currency=currency_code and t.effective_at>=period_start-(period_end-period_start)and t.effective_at<period_start and(cardinality(allowed_accounts)=0 or t.account_id=any(allowed_accounts))and(cardinality(allowed_categories)=0 or t.category_id=any(allowed_categories))
+)
+select jsonb_build_object('currency',currency_code,'income_minor',totals.income,'expense_minor',totals.expense,'net_minor',totals.income-totals.expense,'transaction_count',totals.count,'period',jsonb_build_object('start',period_start,'end',period_end,'timezone',(select timezone from financegpt.profiles where user_id=uid)),'prior_period_expense_minor',prior.expense,'expense_change_percent',case when prior.expense=0 then null else round((totals.expense-prior.expense)*100.0/prior.expense,2)end,
+'categories',coalesce((select jsonb_agg(x)from(select c.id,c.name,sum(a.amount)amount_minor from allocations a join financegpt.categories c on c.id=a.category_id where a.type='expense'group by c.id,c.name order by sum(a.amount)desc)x),'[]'),
+'income_sources',coalesce((select jsonb_agg(x)from(select c.id,c.name,sum(a.amount)amount_minor from allocations a join financegpt.categories c on c.id=a.category_id where a.type='income'group by c.id,c.name order by sum(a.amount)desc)x),'[]'),
+'merchants',coalesce((select jsonb_agg(x)from(select coalesce(nullif(merchant,''),'Tanpa merchant')name,sum(amount*case when reversal_of is null then 1 else -1 end)amount_minor from base where type='expense'group by merchant order by sum(amount)desc limit 20)x),'[]'),
+'cashflow',coalesce((select jsonb_agg(x)from(select(t.effective_at at time zone p.timezone)::date date,coalesce(sum(case when t.type='income'then t.amount*case when t.reversal_of is null then 1 else -1 end else 0 end),0)income_minor,coalesce(sum(case when t.type='expense'then t.amount*case when t.reversal_of is null then 1 else -1 end else 0 end),0)expense_minor from base t join financegpt.profiles p on p.user_id=t.user_id group by(t.effective_at at time zone p.timezone)::date order by date)x),'[]'),'calculation','Posted only; transfers excluded; refunds netted; splits allocated to category; prior comparison uses equal-length preceding period')from totals,prior
+$$;
+revoke all on function financegpt.analytics_data(uuid,timestamptz,timestamptz,text,uuid[],uuid[])from public,anon,authenticated;
+grant execute on function financegpt.analytics_data(uuid,timestamptz,timestamptz,text,uuid[],uuid[])to service_role;
+notify pgrst,'reload schema';
+commit;
