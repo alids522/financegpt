@@ -15,8 +15,8 @@ void main() {
   });
   test('month is a calendar month with an exclusive end', () {
     final p = Period.calendar('Month', DateTime(2026, 11, 8));
-    expect(p.start, DateTime(2026, 11));
-    expect(p.end, DateTime(2026, 12));
+    expect(p.start.toUtc(), DateTime.utc(2026, 10, 31, 17));
+    expect(p.end.toUtc(), DateTime.utc(2026, 11, 30, 17));
     expect(
       p.contains(DateTime(2026, 11, 30, 23, 59, 59).toIso8601String()),
       true,
@@ -26,11 +26,11 @@ void main() {
   test('week honors selected week start', () {
     expect(
       Period.calendar('Week', DateTime(2026, 11, 8)).start,
-      DateTime(2026, 11, 2),
+      financeDate(2026, 11, 2),
     );
     expect(
       Period.calendar('Week', DateTime(2026, 11, 8), weekStart: 7).start,
-      DateTime(2026, 11, 8),
+      financeDate(2026, 11, 8),
     );
   });
   test('money parsing never uses floating point', () {

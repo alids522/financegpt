@@ -328,7 +328,7 @@ extension _FinanceDataTools on _FinanceShellState {
                         (t) => [
                           DateFormat(
                             'yyyy-MM-dd',
-                          ).format(DateTime.parse(t['effective_at']).toLocal()),
+                          ).format(localTime(t['effective_at'])),
                           t['type'],
                           t['description'],
                           store.name('accounts', t['account_id']),

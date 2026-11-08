@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -114,7 +115,12 @@ class FixtureStore extends FinanceStore {
 }
 
 void main() {
-  setUpAll(() => initializeDateFormatting('id_ID'));
+  setUpAll(() async {
+    await initializeDateFormatting('id_ID');
+    final loader = FontLoader('Inter')
+      ..addFont(rootBundle.load('assets/fonts/Inter.ttf'));
+    await loader.load();
+  });
   for (final width in [360.0, 768.0, 1366.0]) {
     for (final brightness in Brightness.values) {
       testWidgets('sidebar and all P0 pages fit $width $brightness', (
@@ -139,6 +145,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(BottomNavigationBar), findsNothing);
         expect(tester.takeException(), isNull);
+        if (const bool.fromEnvironment('GENERATE_PREVIEWS')) {
+          await expectLater(
+            find.byType(FinanceShell),
+            matchesGoldenFile(
+              'previews/dashboard-${width.toInt()}-${brightness.name}.png',
+            ),
+          );
+        }
         for (final page in [
           'Transactions',
           'Accounts & Wallets',

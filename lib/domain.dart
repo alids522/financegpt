@@ -1,6 +1,45 @@
 import 'package:intl/intl.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tzdata;
 
 typedef FinanceRow = Map<String, dynamic>;
+final bool _zonesInitialized = (() {
+  tzdata.initializeTimeZones();
+  return true;
+})();
+String reportingTimeZone = 'Asia/Jakarta';
+tz.Location get reportingLocation {
+  if (!_zonesInitialized) throw StateError('Timezone data unavailable');
+  return tz.getLocation(reportingTimeZone);
+}
+
+DateTime localTime(dynamic value) {
+  final text = '$value';
+  final d = DateTime.parse(text);
+  if (!RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(text)) {
+    return tz.TZDateTime(
+      reportingLocation,
+      d.year,
+      d.month,
+      d.day,
+      d.hour,
+      d.minute,
+      d.second,
+      d.millisecond,
+      d.microsecond,
+    );
+  }
+  return tz.TZDateTime.from(d, reportingLocation);
+}
+
+DateTime financeDate(
+  int year, [
+  int month = 1,
+  int day = 1,
+  int hour = 0,
+  int minute = 0,
+]) => tz.TZDateTime(reportingLocation, year, month, day, hour, minute);
+DateTime financeNow() => tz.TZDateTime.now(reportingLocation);
 
 int integer(dynamic value) =>
     value is num ? value.round() : int.tryParse('$value') ?? 0;
@@ -9,10 +48,8 @@ String money(dynamic value, [String currency = 'IDR']) => NumberFormat.currency(
   symbol: currency == 'IDR' ? 'Rp ' : '$currency ',
   decimalDigits: currency == 'IDR' ? 0 : 2,
 ).format(integer(value) / (currency == 'IDR' ? 1 : 100));
-String dateLabel(dynamic value) => DateFormat(
-  'dd MMM yyyy',
-  'id_ID',
-).format(DateTime.parse('$value').toLocal());
+String dateLabel(dynamic value) =>
+    DateFormat('dd MMM yyyy', 'id_ID').format(localTime(value));
 int parseMoney(String value, [String currency = 'IDR']) {
   final normalized = value.trim().replaceAll('.', '').replaceAll(',', '.');
   if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(normalized)) {
@@ -32,7 +69,15 @@ int parseMoney(String value, [String currency = 'IDR']) {
 class Period {
   final DateTime start;
   final DateTime end;
-  const Period(this.start, this.end);
+  Period(DateTime start, DateTime end)
+    : start = financeDate(
+        start.year,
+        start.month,
+        start.day,
+        start.hour,
+        start.minute,
+      ),
+      end = financeDate(end.year, end.month, end.day, end.hour, end.minute);
   factory Period.calendar(String kind, DateTime anchor, {int weekStart = 1}) {
     final d = DateTime(anchor.year, anchor.month, anchor.day);
     switch (kind) {
@@ -48,7 +93,7 @@ class Period {
     }
   }
   bool contains(dynamic value) {
-    final d = DateTime.parse('$value').toLocal();
+    final d = localTime(value);
     return !d.isBefore(start) && d.isBefore(end);
   }
 
@@ -81,11 +126,15 @@ class Forecast {
     String method = 'run_rate',
   }) {
     final elapsed =
-        (DateTime(
-                  now.year,
-                  now.month,
-                  now.day,
-                ).difference(period.start).inDays +
+        (DateTime.utc(now.year, now.month, now.day)
+                    .difference(
+                      DateTime.utc(
+                        period.start.year,
+                        period.start.month,
+                        period.start.day,
+                      ),
+                    )
+                    .inDays +
                 1)
             .clamp(1, period.days);
     final total = switch (method) {

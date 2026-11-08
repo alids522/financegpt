@@ -58,6 +58,7 @@ class FinanceStore extends ChangeNotifier {
           await db.from('profiles').select().eq('user_id', uid).maybeSingle() ??
           FinanceRow.from(await api('auth/me') as Map);
       profile = p;
+      reportingTimeZone = p['timezone'] ?? 'Asia/Jakarta';
       if (p['must_change_password'] == true) {
         data.clear();
         admin = false;
@@ -126,6 +127,30 @@ class FinanceStore extends ChangeNotifier {
   }
 
   Future<void> save(String table, FinanceRow values, {String? id}) async {
+    if ([
+      'categories',
+      'transaction_templates',
+      'budgets',
+      'recurring_rules',
+      'accounts',
+    ].contains(table)) {
+      final payload = FinanceRow.from(values);
+      final version = payload.remove('row_version');
+      await db.rpc(
+        'save_resource',
+        params: {
+          'resource': table,
+          'payload': payload,
+          'idempotency_key': uuid.v4(),
+          'record_id': id,
+          'expected_version': id != null && version != null
+              ? integer(version) - 1
+              : null,
+        },
+      );
+      await refresh();
+      return;
+    }
     if (id == null) {
       await db.from(table).insert({...values, 'user_id': uid});
     } else {

@@ -35,17 +35,56 @@ extension _FinancePages on _FinanceShellState {
       );
   Widget dashboard() {
     final parts = <String, Widget>{
-      'summary': responsive([
-        kpi('Total saldo', balance, note: 'Aset kas · ${store.currency}'),
-        kpi('Pemasukan', income, color: positive, note: 'Transaksi posted'),
-        kpi('Pengeluaran', expense, color: negative, note: 'Setelah refund'),
-        kpi(
-          'Arus kas bersih',
-          income - expense,
-          note: 'Pemasukan − pengeluaran',
-          color: income >= expense ? positive : negative,
-        ),
-      ], min: 220),
+      'summary': LayoutBuilder(
+        builder: (context, box) => box.maxWidth < 600
+            ? Column(
+                children: [
+                  kpi(
+                    'Total saldo',
+                    balance,
+                    note:
+                        'Arus kas bersih ${money(income - expense, store.currency)}',
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: compactKpi('Pemasukan', income, positive),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: compactKpi('Pengeluaran', expense, negative),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : responsive([
+                kpi(
+                  'Total saldo',
+                  balance,
+                  note: 'Aset kas · ${store.currency}',
+                ),
+                kpi(
+                  'Pemasukan',
+                  income,
+                  color: positive,
+                  note: 'Transaksi posted',
+                ),
+                kpi(
+                  'Pengeluaran',
+                  expense,
+                  color: negative,
+                  note: 'Setelah refund',
+                ),
+                kpi(
+                  'Arus kas bersih',
+                  income - expense,
+                  note: 'Pemasukan − pengeluaran',
+                  color: income >= expense ? positive : negative,
+                ),
+              ], min: 220),
+      ),
       'cashflow': section(
         'Arus kas',
         subtitle: 'Aktual & proyeksi · ${period.label}',
@@ -163,6 +202,32 @@ extension _FinancePages on _FinanceShellState {
     );
   }
 
+  Widget compactKpi(String label, int value, Color color) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              money(value, store.currency),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   Future<void> dashboardCustomize() async {
     await showDialog<void>(
       context: context,
@@ -259,7 +324,7 @@ extension _FinancePages on _FinanceShellState {
     for (var i = 0; i < n; i++) {
       final day = period.start.add(Duration(days: i));
       final rows = posted.where((t) {
-        final d = DateTime.parse(t['effective_at']).toLocal();
+        final d = localTime(t['effective_at']);
         return d.year == day.year && d.month == day.month && d.day == day.day;
       }).toList();
       acc += forecastLine
@@ -1044,23 +1109,38 @@ extension _FinancePages on _FinanceShellState {
         .where((c) => c['parent_id'] == b['category_id'])
         .map((c) => c['id'])
         .toSet();
-    return sumType(
-      'expense',
-      store
-          .rows('transactions')
-          .where(
-            (t) =>
-                t['status'] == 'posted' &&
-                t['currency'] == b['currency'] &&
-                p.contains(t['effective_at']) &&
-                (b['account_id'] == null ||
-                    b['account_id'] == t['account_id']) &&
-                (b['category_id'] == null ||
-                    b['category_id'] == t['category_id'] ||
-                    children.contains(t['category_id'])),
-          )
-          .toList(),
-    );
+    final relevant = store
+        .rows('transactions')
+        .where(
+          (t) =>
+              t['status'] == 'posted' &&
+              t['currency'] == b['currency'] &&
+              p.contains(t['effective_at']) &&
+              t['type'] == 'expense' &&
+              (b['account_id'] == null || b['account_id'] == t['account_id']),
+        )
+        .toList();
+    return relevant.fold<int>(0, (sum, t) {
+      final splits = store
+          .rows('transaction_splits')
+          .where((s) => s['transaction_id'] == t['id'])
+          .toList();
+      final value = b['category_id'] == null
+          ? integer(t['amount'])
+          : splits.isNotEmpty
+          ? splits
+                .where(
+                  (s) =>
+                      s['category_id'] == b['category_id'] ||
+                      children.contains(s['category_id']),
+                )
+                .fold<int>(0, (n, s) => n + integer(s['amount']))
+          : t['category_id'] == b['category_id'] ||
+                children.contains(t['category_id'])
+          ? integer(t['amount'])
+          : 0;
+      return sum + value * (t['reversal_of'] == null ? 1 : -1);
+    });
   }
 
   Widget budgetRow(FinanceRow b) {
@@ -1072,7 +1152,7 @@ extension _FinancePages on _FinanceShellState {
         DateTime.parse(b['period_start']),
         DateTime.parse(b['period_end']).add(const Duration(days: 1)),
       ),
-      now: DateTime.now(),
+      now: financeNow(),
     );
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
@@ -1775,7 +1855,12 @@ extension _FinancePages on _FinanceShellState {
       return;
     }
     run(() async {
-      await store.api('auth/change-password', method: 'POST', body: v);
+      final result = await store.api(
+        'auth/change-password',
+        method: 'POST',
+        body: v,
+      );
+      await store.client.auth.setSession(result['refresh_token']);
       await store.refresh();
     });
   }

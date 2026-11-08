@@ -2,6 +2,12 @@ name: Verify and build Android APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'supabase/**'
+      - 'workers/**'
+      - 'scripts/**'
+      - 'README.md'
   pull_request:
   workflow_dispatch:
 permissions:

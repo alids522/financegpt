@@ -843,9 +843,9 @@ class _TransactionEditorState extends State<TransactionEditor> {
               .where((a) => a['status'] == 'active')
               .first['id'];
   String? category, destination, attachment;
-  late DateTime date =
-      DateTime.tryParse(initial['effective_at'] ?? '')?.toLocal() ??
-      DateTime.now();
+  late DateTime date = initial['effective_at'] != null
+      ? localTime(initial['effective_at'])
+      : financeNow();
   late final amountControl = TextEditingController(
     text: initial['amount'] == null
         ? ''
@@ -1280,7 +1280,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                               );
                               if (time != null) {
                                 setState(() {
-                                  date = DateTime(
+                                  date = financeDate(
                                     d.year,
                                     d.month,
                                     d.day,

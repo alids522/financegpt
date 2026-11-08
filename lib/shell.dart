@@ -57,7 +57,7 @@ class _FinanceShellState extends State<FinanceShell> {
       widget.initialStore ?? FinanceStore(Supabase.instance.client);
   int page = 0, tablePage = 0;
   late bool collapsed = widget.preferences.getBool('sidebarCollapsed') ?? false;
-  DateTime anchor = DateTime.now();
+  DateTime anchor = financeNow();
   String periodType = 'Month', model = 'run_rate';
   Period? customPeriod;
   final filter = TransactionFilter();
@@ -78,6 +78,12 @@ class _FinanceShellState extends State<FinanceShell> {
         anchor,
         weekStart: integer(store.profile['week_start'] ?? 1),
       );
+  Color get positive => Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF72B39A)
+      : const Color(0xFF287C60);
+  Color get negative => Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFFD88989)
+      : const Color(0xFFB64D52);
   List<FinanceRow> get periodTransactions => store
       .rows('transactions')
       .where(

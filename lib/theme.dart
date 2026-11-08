@@ -14,6 +14,13 @@ ThemeData financeTheme(Brightness b) {
         surface: surface,
         outline: border,
         onSurface: text,
+        onSurfaceVariant: dark
+            ? const Color(0xFF9BA4AE)
+            : const Color(0xFF68727D),
+        surfaceContainerHighest: dark
+            ? const Color(0xFF22272D)
+            : const Color(0xFFEFF2F5),
+        error: dark ? const Color(0xFFD88989) : const Color(0xFFB64D52),
       );
   return ThemeData(
     useMaterial3: true,
@@ -23,10 +30,18 @@ ThemeData financeTheme(Brightness b) {
         ? const Color(0xFF101317)
         : const Color(0xFFF7F8FA),
     fontFamily: 'Inter',
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      elevation: 0,
+      focusElevation: 0,
+      hoverElevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    ),
     textTheme: Typography.material2021(
       platform: TargetPlatform.android,
       colorScheme: scheme,
-    ).black.apply(bodyColor: text, displayColor: text),
+    ).black.apply(fontFamily: 'Inter', bodyColor: text, displayColor: text),
     cardTheme: CardThemeData(
       color: surface,
       elevation: 0,
