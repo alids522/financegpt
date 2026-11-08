@@ -12,6 +12,7 @@ def useKotlinMirror = { repositories ->
 }
 settingsEvaluated { settings ->
     useKotlinMirror(settings.pluginManagement.repositories)
+    settings.pluginManagement.repositories.gradlePluginPortal()
     useKotlinMirror(settings.dependencyResolutionManagement.repositories)
     def permitsProjectRepositories = settings.dependencyResolutionManagement.repositoriesMode.get().toString() == 'PREFER_PROJECT'
     gradle.beforeProject { project ->
