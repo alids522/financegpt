@@ -315,7 +315,7 @@ class _AccountStatementDialogState extends State<AccountStatementDialog> {
               currency,
             ],
         ];
-        final bytes = utf8.encode('﻿${encodeCsv(records)}');
+        final bytes = utf8.encode(encodeCsv(records));
         if (kIsWeb) {
           await FileSaver.instance.saveFile(
             name: filename.replaceAll('.csv', ''),

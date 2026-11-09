@@ -6,17 +6,19 @@ The [visual refresh](docs/UI_REFRESH.md) follows the user-provided reference ima
 
 ## Download
 
-Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 22 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
+Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 28 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
 
 ## Implemented
 
 - Signup without email confirmation, username/email login, session checks, password change, and audited admin-assisted password reset with a forced change. No email forgot-password flow.
 - User-owned accounts, integer minor-unit ledger, atomic same-currency transfers, opening balances, reconciliations, reversals, refunds, split categories, transaction versions, and idempotent retries. Internal transfers never become income/expense.
 - Categories/subcategories, templates, typed custom fields, configurable optional transaction fields, search/filter/sort/pagination, saved views, and calendar/timezone period boundaries.
+- Per-account e-statements in PDF/CSV with inclusive custom dates or complete calendar months, opening/debit/credit/closing and running balances from the ledger.
 - Dashboard and analytics, budget/actual/remaining/projected variance, deterministic run-rate/scheduled/hybrid forecast, assumptions, scenario simulation, and low-confidence labels. Currency balances are reported separately; no invented FX conversion.
 - CSV import/export and digital PDF extraction/import with mapping, explicit review, validation, duplicate choices, and idempotent chunks. Native reports and queued REST/MCP exports support CSV/PDF transactions, budget, and forecast datasets. Private export links expire.
-- OAuth PKCE remote MCP, permission-aware tool listing, account/category policy restrictions, write thresholds, trusted-user approval, immediate connection revocation, and audit logs. OAuth tokens cannot bypass policy through the Data API.
+- Generate per-user personal tokens directly in API & AI Agents for both REST and remote MCP. Tokens are shown once, stored only as SHA-256 hashes, expire after 1–365 days, and support read/write scopes, account/category restrictions, approval, pause/revocation and audit. Finance OAuth integration is retired; token credentials cannot authenticate to the shared Supabase Data API or other applications.
 - Admin metadata search, suspension/reactivation, role changes, forced logout, and password reset with reason/proof. Admin status grants no access to another user's finance records.
+- Floating rounded mobile drawer, direct dashboard forecast, and Android Back navigation: subpages return to dashboard, then two Back presses within two seconds exit.
 - Basic recurring schedules, goals, and debts are included as early P1 functionality.
 
 The PRD explicitly phases the mature persistent offline queue, advanced calibrated forecast history/confidence, bulk editing/merge, and full backup/restore as P1; OCR of scanned PDFs, household and investment tracking are P2. They are not represented as completed functionality. This release is online-first with an in-memory list cache and stable retry keys. Automated widget tests cover shared UI at 360/768/1366 widths in both themes. Device E2E and performance/chaos targets have not been measured.

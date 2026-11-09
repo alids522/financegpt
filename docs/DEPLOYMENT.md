@@ -2,27 +2,38 @@
 
 ## Database
 
-A fresh Supabase installation needs PostgreSQL 17, Auth, PostgREST, Storage, and an Edge Functions runtime. Apply `supabase/migrations/20261108101048_finance_tracker_v1.sql` once, as the database owner. It installs tables, RLS, grants, functions, triggers, indexes, a private Storage bucket, and publication membership. Do not reapply the initial migration to an existing financegpt database. Root SQL files are the ordered sources of that initial migration, rather than additional migrations to run a second time.
+A fresh Supabase installation needs PostgreSQL 17, Auth, PostgREST, Storage, and an Edge Functions runtime. Apply the initial `supabase/migrations/20261108101048_finance_tracker_v1.sql` once as the database owner, followed by `20261109131759_personal_tokens_statements.sql`. Existing installations need only the latter upgrade. It installs tables, RLS, grants, functions, triggers, indexes, a private Storage bucket, and publication membership. Do not reapply the initial migration to an existing financegpt database. Root SQL files are the ordered sources of that initial migration, rather than additional migrations to run a second time.
 
 The migration includes an explicitly guarded compatibility block for the existing shared server: it skips that server's invitation/WA signup triggers only when Auth metadata identifies `app=financegpt`. Other application registrations retain their existing behavior. The hook and all financial tables are kept outside other applications' schemas.
 
 Expose `financegpt` in PostgREST without removing already exposed schemas. The configured server uses the `authenticator` role `pgrst.db_schemas` setting followed by PostgREST reload notifications. Enable Realtime for the application tables if publication is not already present. `finance_private` must never be an exposed REST schema.
 
-Auth configuration: email autoconfirm enabled, signup enabled, minimum password 12 on this shared server, OAuth server enabled, dynamic registration disabled, authorization/consent path `/functions/v1/finance-api/consent`, and custom token hook `pg-functions://postgres/finance_private/custom_access_token_hook`. The hook changes audience only for clients with `client_uri` equal to the exact Finance MCP resource; other client claims are preserved.
+Auth configuration: email autoconfirm and signup enabled, minimum password 12 on the configured shared server. Finance uses normal user login for its UI and opaque personal tokens for external API/MCP access. Global Supabase OAuth settings and the historical custom token hook may remain for other applications; Finance OAuth client tokens are now rejected, old Finance connections revoked, and Finance consent/metadata routes return 410.
 
 ## Edge Functions and PDF/report worker
 
-Deploy the entire `supabase/functions/finance-api` directory as function `finance-api`. Gateway JWT verification must be disabled for this function because OAuth tokens have a resource audience and the function verifies signature, issuer, audience, expiry, user, session, and agent status itself. Supply `SUPABASE_URL` (internal gateway), `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET` for legacy HS256, and `FINANCE_PUBLIC_URL` for public URLs. Asymmetric JWTs use Auth JWKS. Keep these in the server environment.
+Deploy the entire `supabase/functions/finance-api` directory as function `finance-api`. Gateway JWT verification must be disabled for this function because personal tokens are opaque. The function checks their hash, live owner profile, expiry, revocation, connection and permissions. UI session JWTs still receive signature/issuer/audience/session checks. Supply `SUPABASE_URL` (internal gateway), `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET` for legacy HS256, and `FINANCE_PUBLIC_URL` for public URLs. Asymmetric JWTs use Auth JWKS. Keep these in the server environment.
 
 Build `workers/Dockerfile` with its adjacent Python and Inter files. Run it on the Supabase Docker network as `financegpt-pdf`, port 8080 internal only, with the service key in a protected env file. It calls `http://kong:8000` by default, or `SUPABASE_URL` if set. Use a non-root user, read-only root filesystem, a small tmpfs, and resource limits. The worker extracts digital PDF text, processes private export jobs, runs recurring schedules/maintenance, and removes expired output files. It never exposes uploaded document contents in logs. It does not perform OCR.
 
-For a standard MCP client, expose public metadata at `/.well-known/oauth-protected-resource/functions/v1/finance-api/mcp` and `/.well-known/oauth-authorization-server/auth/v1`. Proxy those to the function's protected-resource metadata and Auth's authorization-server metadata, respectively. OAuth `/auth/v1/oauth/` endpoints must allow standard PKCE requests without an application-specific apikey header. Existing Auth password/admin endpoints retain their original gateway protection. These additive routes are installed on the configured server with a backup of the original gateway configuration.
+## API and MCP tokens
 
-## Connecting an agent
+In the app, open **API & AI Agents → Generate token**, provide a name and lifetime, and copy the token from the one-time dialog. The default is read-only and 90 days; supported lifetime is 1–365 days. Use the settings icon to grant write scopes, limits, approval policy, and account/category restrictions. The owner can pause or permanently revoke each token. Losing the secret requires generating a new token.
 
-Register a public OAuth client through Supabase's trusted administrator interface/API with a display name, explicit redirect URI(s), authorization-code/refresh grants, and `client_uri` exactly `https://supabase.adoetz52.my.id/functions/v1/finance-api/mcp`. Supply that client ID to the MCP client and add it under **API & AI Agents**. Automatic dynamic registration is disabled.
+Both interfaces use `Authorization: Bearer fgt_...` without an apikey header or OAuth registration:
 
-Use OAuth authorization code with PKCE S256 and the exact MCP resource. Request `email profile`; this self-hosted Auth signing configuration does not issue OpenID ID tokens with legacy HS256, and the app does not require one. The hosted consent page lets the user authenticate and approve the client. Configure financial permissions and limits in the app. Financial permissions are enforced independently from basic OAuth identity scopes. High-risk actions and report exports require a separate trusted-user approval in the app. Poll `get_action_status` for execution/report status and private download links.
+- REST: `https://supabase.adoetz52.my.id/functions/v1/finance-api/api/v1`
+- MCP: `https://supabase.adoetz52.my.id/functions/v1/finance-api/mcp`
+
+The MCP client must support manually configured Bearer authentication. Requests are limited to 120/minute/token, with additional financial mutation limits. Generation requires an active, trusted user session; tokens cannot create tokens, approve actions, access admin endpoints, or bypass policies through Supabase REST. Metadata lists are owner-only and exclude secrets/hashes. Raw secrets are never persisted, including in idempotency caches. Other apps sharing Supabase Auth do not accept these Finance-specific tokens.
+
+`POST /tokens` takes `{ "name": "My integration", "expires_in_days": 90 }` using the UI user session. `GET /tokens` lists own metadata; `DELETE /tokens/{id}` revokes it. Existing Finance OAuth connections are retired. Shared-server OAuth/gateway routes used by other apps are not disabled.
+
+## E-statements
+
+Under **Accounts & Wallets**, each account has an **E-statement** button. Select a month (day 1 through its actual last day, including leap years), or a custom inclusive date range, display the preview, then export PDF or CSV. The report includes opening balance, credit/debit totals, closing balance and every movement's running balance. Transfers, refunds, opening and correction journals are included. The preview shows 15 rows; exported files contain all rows. CSV amounts are integer minor units with a single UTF-8 BOM; PDF amounts use the account currency's display units.
+
+REST: `GET /accounts/{id}/statement?start=YYYY-MM-DD&end=YYYY-MM-DD`; MCP: `get_account_statement` with `account_id`, `start`, `end`. Dates are inclusive in the owner's timezone. Access is restricted to the owner; a personal token also needs account/transaction read permissions and the full permitted category scope for that account. Maximum range is 10 years / 20,000 movements per request. Use a shorter range if exceeded.
 
 ## Administrator bootstrap
 
