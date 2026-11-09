@@ -1,5 +1,7 @@
 # Verification record
 
+Latest verification: [personal tokens, e-statements, navigation and build 17](TOKENS_STATEMENTS.md). The record below documents the original 2026-11-08 baseline; its OAuth integration has since been retired in favor of personal tokens.
+
 Executed against the configured self-hosted backend on 2026-11-08. Test accounts were isolated fixtures, not real users. Production performance targets are not claimed from these functional checks.
 
 | Area | Evidence |
