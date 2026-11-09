@@ -164,8 +164,8 @@ void main() {
           expect(find.text('••••••••'), findsOneWidget);
           await tester.tap(find.byTooltip('Tampilkan total saldo'));
           await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Pengeluaran').last);
-          await tester.tap(find.text('Pengeluaran').last);
+          await tester.ensureVisible(find.text('Forecast').last);
+          await tester.tap(find.text('Forecast').last);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           for (final page in [
@@ -197,8 +197,19 @@ void main() {
                         .first
                   : find.byType(Scrollable).first,
             );
+            await Scrollable.ensureVisible(tester.element(item), alignment: .5);
+            await tester.pumpAndSettle();
             await tester.tap(item);
             await tester.pumpAndSettle();
+            if (page == 'Accounts & Wallets') {
+              await tester.ensureVisible(find.text('E-statement').first);
+              await tester.tap(find.text('E-statement').first);
+              await tester.pumpAndSettle();
+              expect(find.byType(AccountStatementDialog), findsOneWidget);
+              expect(find.text('Custom tanggal'), findsOneWidget);
+              await tester.tap(find.byTooltip('Tutup e-statement'));
+              await tester.pumpAndSettle();
+            }
             if (page == 'Transactions') {
               await tester.ensureVisible(find.text('Filter lanjutan'));
               await tester.tap(find.text('Filter lanjutan'));
@@ -232,4 +243,63 @@ void main() {
       });
     }
   }
+  testWidgets(
+    'Back closes drawer, returns to dashboard, then requires two presses to exit',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var exits = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'SystemNavigator.pop') exits++;
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: financeTheme(Brightness.dark),
+          home: FinanceShell(
+            preferences: prefs,
+            onTheme: (_) {},
+            initialStore: FixtureStore(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Buka navigasi'));
+      await tester.pumpAndSettle();
+      if (const bool.fromEnvironment('GENERATE_PREVIEWS')) {
+        await expectLater(
+          find.byType(FinanceShell),
+          matchesGoldenFile('previews/floating-drawer-dark.png'),
+        );
+      }
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Keuangan dalam kendali.'), findsOneWidget);
+      expect(exits, 0);
+      await tester.tap(find.byTooltip('Buka navigasi'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Transactions'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Keuangan dalam kendali.'), findsOneWidget);
+      expect(exits, 0);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Tekan Back sekali lagi untuk keluar'), findsOneWidget);
+      expect(exits, 0);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(exits, 1);
+    },
+  );
 }

@@ -282,7 +282,7 @@ extension _FinancePages on _FinanceShellState {
     bool expenseLine = false,
     bool compact = false,
   }) {
-    if (posted.isEmpty) {
+    if (posted.isEmpty && !compact && !forecastLine) {
       return empty('Grafik akan muncul setelah ada transaksi posted.');
     }
     final n = period.days;
@@ -302,7 +302,7 @@ extension _FinancePages on _FinanceShellState {
       }
     }
     if (values.isEmpty) return empty('Tidak ada data aktual.');
-    final future = (forecastLine || compact)
+    final future = (forecastLine || compact) && values.last.x < n - 1
         ? [
             values.last,
             FlSpot(
@@ -321,6 +321,7 @@ extension _FinancePages on _FinanceShellState {
       1.0,
       ...values.map((x) => x.y.abs()),
       ...future.map((x) => x.y.abs()),
+      if (forecastLine) budgetTotal.abs().toDouble(),
     ].reduce(math.max);
     return Column(
       children: [
@@ -1052,7 +1053,9 @@ extension _FinancePages on _FinanceShellState {
                   subtitle: '${a['type']} · ${a['currency']} · ${a['status']}',
                   action: PopupMenuButton<String>(
                     onSelected: (v) async {
-                      if (v == 'edit') {
+                      if (v == 'statement') {
+                        accountStatement(a);
+                      } else if (v == 'edit') {
                         accountEditor(existing: a);
                       } else if (v == 'reconcile') {
                         reconcileAccount(a);
@@ -1083,6 +1086,10 @@ extension _FinancePages on _FinanceShellState {
                       }
                     },
                     itemBuilder: (c) => [
+                      const PopupMenuItem(
+                        value: 'statement',
+                        child: Text('E-statement / mutasi'),
+                      ),
                       const PopupMenuItem(
                         value: 'edit',
                         child: Text('Edit akun'),
@@ -1120,6 +1127,12 @@ extension _FinancePages on _FinanceShellState {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => accountStatement(a),
+                        icon: const Icon(Icons.description_outlined, size: 18),
+                        label: const Text('E-statement'),
+                      ),
+                      const SizedBox(height: 8),
                       TextButton(
                         onPressed: () {
                           update(() => filter.account = a['id']);

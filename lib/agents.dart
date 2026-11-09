@@ -7,15 +7,12 @@ const agentScopes = [
   'transactions:update',
   'transactions:delete',
   'categories:read',
-  'categories:write',
   'budgets:read',
   'budgets:write',
   'forecasts:read',
   'forecasts:simulate',
   'analytics:read',
   'reports:export',
-  'transactions:import',
-  'recurring:write',
 ];
 
 extension _FinanceAgents on _FinanceShellState {
@@ -56,14 +53,14 @@ extension _FinanceAgents on _FinanceShellState {
               FilledButton.icon(
                 onPressed: connectAgent,
                 icon: const Icon(Icons.add_link),
-                label: const Text('Connect agent'),
+                label: const Text('Generate token'),
               ),
             ],
           ),
         ),
         section(
           'Endpoint & autentikasi',
-          subtitle: 'OAuth 2.1 + PKCE · remote MCP Streamable HTTP',
+          subtitle: 'Token pribadi · REST API dan MCP Streamable HTTP',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -80,7 +77,7 @@ extension _FinanceAgents on _FinanceShellState {
               SelectableText('$apiUrl/mcp'),
               const SizedBox(height: 12),
               const Text(
-                'Daftarkan OAuth client melalui administrator, lalu hubungkan client ID di bawah. Client tanpa dukungan OAuth yang diperlukan tidak dapat dihubungkan.',
+                'Buat token di aplikasi, lalu gunakan Authorization: Bearer TOKEN untuk REST API maupun MCP. Token hanya ditampilkan sekali. Atur izin dan batas untuk setiap token; hanya data pemilik token yang dapat diakses.',
                 style: TextStyle(fontSize: 12, height: 1.7),
               ),
               TextButton.icon(
@@ -96,25 +93,32 @@ extension _FinanceAgents on _FinanceShellState {
         ),
         const SizedBox(height: 20),
         section(
-          'Connected agents',
-          child: store.rows('agent_connections').isEmpty
-              ? empty('Belum ada agent yang diberi akses.')
+          'Token API & MCP',
+          child:
+              store
+                  .rows('agent_connections')
+                  .where((a) => '${a['oauth_client_id']}'.startsWith('pat:'))
+                  .isEmpty
+              ? empty('Belum ada token. Tekan Generate token untuk membuatnya.')
               : Column(
                   children: store
                       .rows('agent_connections')
+                      .where(
+                        (a) => '${a['oauth_client_id']}'.startsWith('pat:'),
+                      )
                       .map(
                         (a) => ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.hub_outlined),
                           title: Text(a['display_name']),
-                          subtitle: Text(
-                            '${a['status']} · ${dateLabel(a['connected_at'])}',
-                          ),
+                          subtitle: Text(tokenCaption(a)),
                           trailing: Wrap(
                             children: [
                               IconButton(
                                 tooltip: 'Atur izin dan batas',
-                                onPressed: () => agentPolicy(a),
+                                onPressed: a['status'] == 'revoked'
+                                    ? null
+                                    : () => agentPolicy(a),
                                 icon: const Icon(Icons.tune),
                               ),
                               PopupMenuButton<String>(
@@ -124,6 +128,24 @@ extension _FinanceAgents on _FinanceShellState {
                                         'Cabut akses agent?',
                                         'Token yang belum kedaluwarsa juga akan ditolak pada request berikutnya.',
                                       )) {
+                                    return;
+                                  }
+                                  if (v == 'revoke') {
+                                    final token = store
+                                        .rows('personal_tokens')
+                                        .where(
+                                          (t) => t['connection_id'] == a['id'],
+                                        )
+                                        .firstOrNull;
+                                    if (token != null) {
+                                      await run(() async {
+                                        await store.api(
+                                          'tokens/${token['id']}',
+                                          method: 'DELETE',
+                                        );
+                                        await store.refresh();
+                                      });
+                                    }
                                     return;
                                   }
                                   run(
@@ -143,6 +165,7 @@ extension _FinanceAgents on _FinanceShellState {
                                 itemBuilder: (c) => [
                                   PopupMenuItem(
                                     value: 'pause',
+                                    enabled: a['status'] != 'revoked',
                                     child: Text(
                                       a['status'] == 'active'
                                           ? 'Pause'
@@ -274,16 +297,92 @@ extension _FinanceAgents on _FinanceShellState {
     );
   }
 
+  String tokenCaption(FinanceRow connection) {
+    final token = store
+        .rows('personal_tokens')
+        .where((t) => t['connection_id'] == connection['id'])
+        .firstOrNull;
+    return token == null
+        ? connection['status']
+        : '${token['prefix']}… · ${token['status']} · berlaku s.d. ${dateLabel(token['expires_at'])}';
+  }
+
   Future<void> connectAgent() async {
-    final v = await recordDialog('Hubungkan OAuth client', [
-      const Field('display_name', 'Nama agent'),
-      const Field('oauth_client_id', 'OAuth client ID'),
-    ], saveLabel: 'Hubungkan & berikan izin');
-    if (v == null) return;
+    final values = await recordDialog('Generate token pribadi', [
+      const Field('name', 'Nama token', value: 'Integrasi saya'),
+      const Field(
+        'days',
+        'Masa berlaku',
+        value: '90',
+        options: {
+          '7': '7 hari',
+          '30': '30 hari',
+          '90': '90 hari',
+          '365': '1 tahun',
+        },
+      ),
+    ], saveLabel: 'Generate token');
+    if (values == null) return;
     await run(() async {
-      await store.api('agents/connections', method: 'POST', body: v);
+      final result = FinanceRow.from(
+        await store.api(
+          'tokens',
+          method: 'POST',
+          body: {
+            'name': values['name'],
+            'expires_in_days': int.parse(values['days']),
+          },
+        ),
+      );
+      if (!mounted) return;
+      update(() => saving = false);
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Simpan token Anda'),
+          content: SizedBox(
+            width: 500,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Token hanya ditampilkan sekali. Izin awal hanya baca; aktifkan izin tulis melalui pengaturan token bila diperlukan.',
+                ),
+                const SizedBox(height: 16),
+                SelectableText(
+                  result['token'],
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Text('Berlaku s.d. ${dateLabel(result['expires_at'])}'),
+                const SizedBox(height: 8),
+                const Text(
+                  'REST API dan MCP: Authorization: Bearer TOKEN',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: result['token']));
+                if (mounted) toast('Token disalin.');
+              },
+              icon: const Icon(Icons.copy),
+              label: const Text('Salin token'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Sudah disimpan'),
+            ),
+          ],
+        ),
+      );
       await store.refresh();
-    });
+    }, success: 'Token dibuat. Atur izin dan batas melalui ikon pengaturan.');
   }
 
   Future<void> agentPolicy(FinanceRow a) async {

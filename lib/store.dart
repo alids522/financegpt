@@ -98,6 +98,10 @@ class FinanceStore extends ChangeNotifier {
               (await db.from(t).select().limit(1000)).cast<FinanceRow>();
         }),
       );
+      final tokens = await api('tokens');
+      data['personal_tokens'] = List<FinanceRow>.from(
+        (tokens as Map)['data'] ?? [],
+      );
       await loadTransactions();
       online = true;
     } catch (e) {

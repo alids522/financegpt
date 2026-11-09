@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,6 +21,7 @@ part 'data_tools.dart';
 part 'agents.dart';
 part 'form_preferences.dart';
 part 'dashboard.dart';
+part 'statements.dart';
 
 const navigation = <(String, String, IconData)>[
   ('OVERVIEW', 'Dashboard', Icons.space_dashboard_outlined),
@@ -65,12 +67,14 @@ class _FinanceShellState extends State<FinanceShell> {
   Period? customPeriod;
   TransactionFilter filter = TransactionFilter();
   final searchController = TextEditingController();
+  final contentScroll = ScrollController();
   final scaffold = GlobalKey<ScaffoldState>();
   bool saving = false;
+  DateTime? lastBackAt;
   int scenario = 0;
   List<FinanceRow> adminUsers = [], adminLogs = [];
   String adminSearch = '';
-  bool balanceVisible = true, dashboardChartExpense = false;
+  bool balanceVisible = true, dashboardChartExpense = true;
   late List<String> dashboardOrder = initialDashboardOrder();
   List<String> initialDashboardOrder() {
     const defaults = [
@@ -274,6 +278,7 @@ class _FinanceShellState extends State<FinanceShell> {
   @override
   void dispose() {
     searchController.dispose();
+    contentScroll.dispose();
     store.removeListener(changed);
     store.dispose();
     super.dispose();
@@ -307,9 +312,38 @@ class _FinanceShellState extends State<FinanceShell> {
     update(() {
       page = value;
       tablePage = 0;
+      lastBackAt = null;
     });
+    if (contentScroll.hasClients) contentScroll.jumpTo(0);
     if (scaffold.currentState?.isDrawerOpen ?? false) Navigator.pop(context);
     if (value >= 14) loadAdmin();
+  }
+
+  void handleSystemBack() {
+    if (scaffold.currentState?.isDrawerOpen ?? false) {
+      scaffold.currentState!.closeDrawer();
+      lastBackAt = null;
+      return;
+    }
+    if (page != 0) {
+      go(0);
+      return;
+    }
+    final now = DateTime.now();
+    if (lastBackAt != null &&
+        now.difference(lastBackAt!) <= const Duration(seconds: 2)) {
+      if (!kIsWeb) SystemNavigator.pop();
+    } else {
+      lastBackAt = now;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tekan Back sekali lagi untuk keluar'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<bool> confirm(String title, String message) async =>
@@ -695,272 +729,286 @@ class _FinanceShellState extends State<FinanceShell> {
         final mobile = box.maxWidth < 768;
         final rail = box.maxWidth < 1200 ? !tabletExpanded : collapsed;
         final dark = Theme.of(context).brightness == Brightness.dark;
-        return Scaffold(
-          key: scaffold,
-          drawer: mobile
-              ? Drawer(
-                  width: 288,
-                  child: FinanceBackdrop(
-                    child: SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: sidebar(false),
+        return PopScope(
+          canPop: kIsWeb,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop) handleSystemBack();
+          },
+          child: Scaffold(
+            key: scaffold,
+            drawer: mobile
+                ? Drawer(
+                    width: 288,
+                    backgroundColor: Colors.transparent,
+                    surfaceTintColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    elevation: 0,
+                    child: BackdropGroup(
+                      child: SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: sidebar(false),
+                        ),
                       ),
                     ),
-                  ),
-                )
-              : null,
-          body: FinanceBackdrop(
-            child: SafeArea(
-              child: Row(
-                children: [
-                  if (!mobile)
-                    SizedBox(
-                      width: rail ? 88 : 260,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                        child: sidebar(rail),
+                  )
+                : null,
+            body: FinanceBackdrop(
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    if (!mobile)
+                      SizedBox(
+                        width: rail ? 88 : 260,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                          child: sidebar(rail),
+                        ),
                       ),
-                    ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            mobile ? 20 : 24,
-                            18,
-                            mobile ? 20 : 28,
-                            8,
-                          ),
-                          child: Row(
-                            children: [
-                              GlassIconButton(
-                                icon: mobile ? Icons.menu : Icons.menu_open,
-                                tooltip: mobile
-                                    ? 'Buka navigasi'
-                                    : 'Ciutkan navigasi',
-                                onPressed: () {
-                                  if (mobile) {
-                                    scaffold.currentState!.openDrawer();
-                                  } else {
-                                    update(() {
-                                      if (box.maxWidth < 1200) {
-                                        tabletExpanded = !tabletExpanded;
-                                      } else {
-                                        collapsed = !collapsed;
-                                      }
-                                    });
-                                    widget.preferences.setBool(
-                                      'sidebarCollapsed',
-                                      collapsed,
-                                    );
-                                  }
-                                },
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  navigation[page].$2,
-                                  style: TextStyle(
-                                    fontSize: mobile ? 23 : 28,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -.8,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (box.maxWidth >= 1200) ...[
-                                periodPicker(),
-                                const SizedBox(width: 16),
-                              ],
-                              if (box.maxWidth >= 1100) ...[
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              mobile ? 20 : 24,
+                              18,
+                              mobile ? 20 : 28,
+                              8,
+                            ),
+                            child: Row(
+                              children: [
                                 GlassIconButton(
-                                  icon: Icons.search,
-                                  tooltip: 'Cari transaksi',
-                                  onPressed: () => go(1),
+                                  icon: mobile ? Icons.menu : Icons.menu_open,
+                                  tooltip: mobile
+                                      ? 'Buka navigasi'
+                                      : 'Ciutkan navigasi',
+                                  onPressed: () {
+                                    if (mobile) {
+                                      scaffold.currentState!.openDrawer();
+                                    } else {
+                                      update(() {
+                                        if (box.maxWidth < 1200) {
+                                          tabletExpanded = !tabletExpanded;
+                                        } else {
+                                          collapsed = !collapsed;
+                                        }
+                                      });
+                                      widget.preferences.setBool(
+                                        'sidebarCollapsed',
+                                        collapsed,
+                                      );
+                                    }
+                                  },
                                 ),
-                                const SizedBox(width: 10),
-                                GlassIconButton(
-                                  icon: Icons.notifications_none_outlined,
-                                  tooltip: 'Notifikasi',
-                                  onPressed: showNotifications,
-                                ),
-                                const SizedBox(width: 10),
-                              ],
-                              if (!mobile) ...[
-                                GlassIconButton(
-                                  icon: Icons.refresh,
-                                  tooltip: 'Muat ulang',
-                                  onPressed: store.loading
-                                      ? null
-                                      : store.refresh,
-                                ),
-                                const SizedBox(width: 10),
-                              ],
-                              PopupMenuButton<String>(
-                                tooltip: 'Profil',
-                                onSelected: (value) {
-                                  if (value == 'logout') {
-                                    store.client.auth.signOut();
-                                  } else if (value == 'refresh') {
-                                    store.refresh();
-                                  } else {
-                                    go(13);
-                                  }
-                                },
-                                itemBuilder: (_) => [
-                                  PopupMenuItem(
-                                    enabled: false,
-                                    child: Text(
-                                      store.profile['display_name'] ??
-                                          'Akun Anda',
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(
+                                    navigation[page].$2,
+                                    style: TextStyle(
+                                      fontSize: mobile ? 23 : 28,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -.8,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const PopupMenuItem(
-                                    value: 'settings',
-                                    child: Text('Pengaturan'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'refresh',
-                                    child: Text('Muat ulang'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'logout',
-                                    child: Text('Keluar'),
-                                  ),
+                                ),
+                                if (box.maxWidth >= 1200) ...[
+                                  periodPicker(),
+                                  const SizedBox(width: 16),
                                 ],
-                                child: GlassPanel(
-                                  radius: 24,
-                                  padding: EdgeInsets.zero,
-                                  blur: false,
-                                  tint: Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withValues(alpha: .07),
-                                  child: SizedBox(
-                                    width: 44,
-                                    height: 44,
-                                    child: Center(
+                                if (box.maxWidth >= 1100) ...[
+                                  GlassIconButton(
+                                    icon: Icons.search,
+                                    tooltip: 'Cari transaksi',
+                                    onPressed: () => go(1),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  GlassIconButton(
+                                    icon: Icons.notifications_none_outlined,
+                                    tooltip: 'Notifikasi',
+                                    onPressed: showNotifications,
+                                  ),
+                                  const SizedBox(width: 10),
+                                ],
+                                if (!mobile) ...[
+                                  GlassIconButton(
+                                    icon: Icons.refresh,
+                                    tooltip: 'Muat ulang',
+                                    onPressed: store.loading
+                                        ? null
+                                        : store.refresh,
+                                  ),
+                                  const SizedBox(width: 10),
+                                ],
+                                PopupMenuButton<String>(
+                                  tooltip: 'Profil',
+                                  onSelected: (value) {
+                                    if (value == 'logout') {
+                                      store.client.auth.signOut();
+                                    } else if (value == 'refresh') {
+                                      store.refresh();
+                                    } else {
+                                      go(13);
+                                    }
+                                  },
+                                  itemBuilder: (_) => [
+                                    PopupMenuItem(
+                                      enabled: false,
                                       child: Text(
-                                        (store.profile['display_name'] ?? 'U')
-                                            .toString()
-                                            .substring(0, 1)
-                                            .toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w500,
-                                          color: dark
-                                              ? const Color(0xFFB9E2FF)
-                                              : const Color(0xFF22568C),
+                                        store.profile['display_name'] ??
+                                            'Akun Anda',
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'settings',
+                                      child: Text('Pengaturan'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'refresh',
+                                      child: Text('Muat ulang'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'logout',
+                                      child: Text('Keluar'),
+                                    ),
+                                  ],
+                                  child: GlassPanel(
+                                    radius: 24,
+                                    padding: EdgeInsets.zero,
+                                    blur: false,
+                                    tint: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: .07),
+                                    child: SizedBox(
+                                      width: 44,
+                                      height: 44,
+                                      child: Center(
+                                        child: Text(
+                                          (store.profile['display_name'] ?? 'U')
+                                              .toString()
+                                              .substring(0, 1)
+                                              .toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                            color: dark
+                                                ? const Color(0xFFB9E2FF)
+                                                : const Color(0xFF22568C),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (box.maxWidth < 1200)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6, bottom: 10),
-                            child: periodPicker(),
-                          ),
-                        if (store.loading || saving)
-                          const LinearProgressIndicator(minHeight: 2),
-                        if (store.error != null)
-                          MaterialBanner(
-                            content: Text(
-                              'Koneksi belum tersedia: ${store.error}',
+                              ],
                             ),
-                            actions: [
-                              TextButton(
-                                onPressed: store.refresh,
-                                child: const Text('Coba lagi'),
-                              ),
-                            ],
                           ),
-                        Expanded(
-                          child: store.loading && store.profile.isEmpty
-                              ? const Center(child: CircularProgressIndicator())
-                              : store.profile['must_change_password'] == true
-                              ? SingleChildScrollView(
-                                  padding: const EdgeInsets.all(24),
-                                  child: passwordPanel(forced: true),
-                                )
-                              : RefreshIndicator(
-                                  onRefresh: store.refresh,
-                                  child: SingleChildScrollView(
-                                    physics:
-                                        const AlwaysScrollableScrollPhysics(),
-                                    padding: EdgeInsets.fromLTRB(
-                                      mobile ? 16 : 24,
-                                      12,
-                                      mobile ? 16 : 28,
-                                      24,
-                                    ),
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        minHeight: box.maxHeight - 200,
+                          if (box.maxWidth < 1200)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: 6,
+                                bottom: 10,
+                              ),
+                              child: periodPicker(),
+                            ),
+                          if (store.loading || saving)
+                            const LinearProgressIndicator(minHeight: 2),
+                          if (store.error != null)
+                            MaterialBanner(
+                              content: Text(
+                                'Koneksi belum tersedia: ${store.error}',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: store.refresh,
+                                  child: const Text('Coba lagi'),
+                                ),
+                              ],
+                            ),
+                          Expanded(
+                            child: store.loading && store.profile.isEmpty
+                                ? const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : store.profile['must_change_password'] == true
+                                ? SingleChildScrollView(
+                                    padding: const EdgeInsets.all(24),
+                                    child: passwordPanel(forced: true),
+                                  )
+                                : RefreshIndicator(
+                                    onRefresh: store.refresh,
+                                    child: SingleChildScrollView(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      padding: EdgeInsets.fromLTRB(
+                                        mobile ? 16 : 24,
+                                        12,
+                                        mobile ? 16 : 28,
+                                        24,
                                       ),
-                                      child: pageContent(),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minHeight: box.maxHeight - 200,
+                                        ),
+                                        child: pageContent(),
+                                      ),
                                     ),
                                   ),
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          floatingActionButton:
-              (page == 0 || page == 1) &&
-                  store.profile['must_change_password'] != true
-              ? SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: FloatingActionButton(
-                    tooltip: 'Tambah transaksi',
-                    onPressed: () => transactionEditor(),
-                    backgroundColor: Colors.transparent,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(mobile ? 32 : 22),
-                    ),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(mobile ? 32 : 22),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFF79CAFF),
-                            Color(0xFF197BFC),
-                            Color(0xFF0858D2),
-                          ],
-                        ),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: .55),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF0775EF,
-                            ).withValues(alpha: dark ? .45 : .25),
-                            blurRadius: 22,
-                            offset: const Offset(0, 6),
                           ),
                         ],
                       ),
-                      child: const Center(
-                        child: Icon(Icons.add, size: 34, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            floatingActionButton:
+                (page == 0 || page == 1) &&
+                    store.profile['must_change_password'] != true
+                ? SizedBox(
+                    width: 64,
+                    height: 64,
+                    child: FloatingActionButton(
+                      tooltip: 'Tambah transaksi',
+                      onPressed: () => transactionEditor(),
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(mobile ? 32 : 22),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(mobile ? 32 : 22),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF79CAFF),
+                              Color(0xFF197BFC),
+                              Color(0xFF0858D2),
+                            ],
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: .55),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF0775EF,
+                              ).withValues(alpha: dark ? .45 : .25),
+                              blurRadius: 22,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.add, size: 34, color: Colors.white),
+                        ),
                       ),
                     ),
-                  ),
-                )
-              : null,
+                  )
+                : null,
+          ),
         );
       },
     ),

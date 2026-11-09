@@ -92,6 +92,44 @@ export function openapi(base: string) {
       "Delete an owned template; historical transactions remain intact",
       "delete",
     );
+  paths["/tokens"] = {
+    get: operation("List own token metadata; secrets are never returned"),
+    post: operation(
+      "Generate per-user API/MCP token; trusted user login only",
+      "post",
+      {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", maxLength: 80 },
+          expires_in_days: { type: "integer", minimum: 1, maximum: 365 },
+        },
+      },
+    ),
+  };
+  paths["/tokens/{id}"] = {
+    parameters: [{ name: "id", in: "path", required: true, schema: uuid }],
+    delete: operation("Permanently revoke own token", "delete"),
+  };
+  paths["/accounts/{id}/statement"] = {
+    parameters: [{ name: "id", in: "path", required: true, schema: uuid }],
+    get: {
+      ...operation(
+        "Bank-style journal statement; inclusive user-timezone dates",
+      ),
+      parameters: [{
+        name: "start",
+        in: "query",
+        required: true,
+        schema: { type: "string", format: "date" },
+      }, {
+        name: "end",
+        in: "query",
+        required: true,
+        schema: { type: "string", format: "date" },
+      }],
+    },
+  };
   paths["/transactions"] = {
     get: {
       ...operation("Cursor-paginated transactions"),
@@ -244,12 +282,16 @@ export function openapi(base: string) {
       title: "Finance Tracker API",
       version: "1.0.0",
       description:
-        "Integer minor units. UTC timestamps with user-timezone reporting. Account ownership, active sessions, idempotency and OAuth permissions are enforced server-side.",
+        "Integer minor units. UTC timestamps with user-timezone reporting. Account ownership, active sessions, idempotency and per-user personal token permissions are enforced server-side.",
     },
     servers: [{ url: base + "/api/v1" }],
     components: {
       securitySchemes: {
-        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "Personal token fgt_... (UI uses Supabase session JWT)",
+        },
       },
       schemas: { Transaction: transaction },
     },

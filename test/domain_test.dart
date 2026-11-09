@@ -3,6 +3,29 @@ import 'package:finance_tracker/domain.dart';
 
 void main() {
   test(
+    'statement month includes last day for 28, 29, 30 and 31 day months',
+    () {
+      expect(StatementRange.month(2026, 1).end, '2026-01-31');
+      expect(StatementRange.month(2026, 2).end, '2026-02-28');
+      expect(StatementRange.month(2024, 2).end, '2024-02-29');
+      expect(StatementRange.month(2026, 4).end, '2026-04-30');
+      expect(StatementRange.month(2026, 12).start, '2026-12-01');
+      expect(StatementRange.month(2026, 12).end, '2026-12-31');
+    },
+  );
+  test('statement custom dates are inclusive and reject reversed dates', () {
+    final range = StatementRange(
+      financeDate(2026, 11, 7, 23),
+      financeDate(2026, 11, 9),
+    );
+    expect(range.start, '2026-11-07');
+    expect(range.end, '2026-11-09');
+    expect(
+      () => StatementRange(financeDate(2026, 11, 9), financeDate(2026, 11, 1)),
+      throwsFormatException,
+    );
+  });
+  test(
     'hybrid uses historical variable spend without counting scheduled actual again',
     () {
       final f = Forecast.calculate(

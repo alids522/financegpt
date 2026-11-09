@@ -318,3 +318,19 @@ String decodeCsvText(String value) {
   }
   return value;
 }
+
+/// Inclusive civil dates for account statements; month length is calendar-aware.
+class StatementRange {
+  final DateTime from, to;
+  StatementRange(DateTime start, DateTime end)
+    : from = financeDate(start.year, start.month, start.day),
+      to = financeDate(end.year, end.month, end.day) {
+    if (to.isBefore(from)) {
+      throw const FormatException('Tanggal akhir harus setelah tanggal awal.');
+    }
+  }
+  factory StatementRange.month(int year, int month) =>
+      StatementRange(financeDate(year, month), financeDate(year, month + 1, 0));
+  String get start => DateFormat('yyyy-MM-dd').format(from);
+  String get end => DateFormat('yyyy-MM-dd').format(to);
+}

@@ -1,0 +1,30 @@
+begin;
+do $$
+declare a uuid:=gen_random_uuid();b uuid:=gen_random_uuid();sa uuid:=gen_random_uuid();sb uuid:=gen_random_uuid();cash uuid;bank uuid;foreign_account uuid;cat uuid;t jsonb;token_b jsonb;statement jsonb;hash text;failed boolean;month_start date:=date_trunc('month',now()at time zone'Asia/Jakarta')::date;month_end date:=(date_trunc('month',now()at time zone'Asia/Jakarta')+interval'1 month -1 day')::date;begin
+ insert into auth.users(id,email,encrypted_password,raw_user_meta_data)values(a,'token-qa-'||a||'@example.com','fixture',jsonb_build_object('app','financegpt','username','tqa_'||left(a::text,8))),(b,'token-qa-'||b||'@example.com','fixture',jsonb_build_object('app','financegpt','username','tqa_'||left(b::text,8)));
+ insert into auth.sessions(id,user_id,created_at,updated_at)values(sa,a,now(),now()),(sb,b,now(),now());
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',a,'role','authenticated','session_id',sa)::text,true);execute 'set local role authenticated';perform financegpt.initialize_profile();
+ cash:=(financegpt.create_account('{"name":"Statement cash","opening_balance":1000000}',gen_random_uuid()::text)->>'id')::uuid;
+ bank:=(financegpt.create_account('{"name":"Statement bank"}',gen_random_uuid()::text)->>'id')::uuid;
+ select id into cat from financegpt.categories where user_id=a and type='expense'limit 1;
+ statement:=financegpt.save_transaction(jsonb_build_object('type','expense','amount',35000,'currency','IDR','account_id',cash,'category_id',cat,'effective_at',month_start::timestamp at time zone'Asia/Jakarta'),gen_random_uuid()::text);
+ perform financegpt.save_transaction(jsonb_build_object('type','transfer','amount',100000,'currency','IDR','account_id',cash,'destination_account_id',bank,'effective_at',now()),gen_random_uuid()::text);
+ perform financegpt.save_transaction(jsonb_build_object('type','expense','amount',10000,'currency','IDR','account_id',cash,'category_id',cat,'effective_at',now(),'reversal_of',statement->>'id'),gen_random_uuid()::text);
+ t:=financegpt.generate_personal_token('Token A',30);assert(t->>'token')~'^fgt_[0-9a-f]{64}$','Invalid token format';
+ failed:=false;begin perform financegpt.account_statement_data(a,cash,month_start,month_end);exception when insufficient_privilege then failed:=true;end;assert failed,'Privileged statement RPC exposed to direct clients';
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',b,'role','authenticated','session_id',sb)::text,true);perform financegpt.initialize_profile();foreign_account:=(financegpt.create_account('{"name":"Other user"}',gen_random_uuid()::text)->>'id')::uuid;token_b:=financegpt.generate_personal_token('Token B',30);
+ failed:=false;begin perform financegpt.revoke_personal_token((t->>'id')::uuid);exception when others then failed:=true;end;assert failed,'User B revoked user A token';
+ assert not exists(select 1 from jsonb_array_elements(financegpt.list_personal_tokens())x where x->>'id'=t->>'id'),'User B saw token A metadata';
+ execute 'reset role';hash:=encode(sha256(convert_to(t->>'token','UTF8')),'hex');
+ assert(select token_hash=hash from finance_private.personal_tokens where id=(t->>'id')::uuid),'Token hash mismatch';assert(financegpt.authenticate_personal_token(hash)->>'uid')=a::text,'Token ownership mismatch';
+ statement:=financegpt.account_statement_data(a,cash,month_start,month_end);assert(statement->>'closing_minor')::bigint=875000,'Statement closing differs from journal';assert(statement->>'credit_minor')::bigint=1010000,'Refund/opening credit mismatch';assert(statement->>'debit_minor')::bigint=135000,'Transfer/expense debit mismatch';assert(statement->'rows'->-1->>'balance_minor')::bigint=875000,'Running balance mismatch';
+ assert(financegpt.account_statement_data(a,bank,month_start,month_end)->>'closing_minor')::bigint=100000,'Incoming transfer missing';
+ failed:=false;begin perform financegpt.account_statement_data(a,foreign_account,month_start,month_end);exception when others then failed:=true;end;assert failed,'Foreign account statement leaked';
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',a,'role','authenticated','session_id',sa)::text,true);execute 'set local role authenticated';perform financegpt.revoke_personal_token((t->>'id')::uuid);
+ update financegpt.agent_connections set status='active'where id=(t->>'connection_id')::uuid;
+ execute 'reset role';failed:=false;begin perform financegpt.authenticate_personal_token(hash);exception when others then failed:=true;end;assert failed,'Revoked token revived with connection';
+ update finance_private.personal_tokens set expires_at=now()-interval'1 second'where id=(token_b->>'id')::uuid;
+ failed:=false;begin perform financegpt.authenticate_personal_token(encode(sha256(convert_to(token_b->>'token','UTF8')),'hex'));exception when others then failed:=true;end;assert failed,'Expired token accepted';
+ raise notice 'PASS: token hashing, ownership, metadata isolation, cross-user revoke denial, irreversible revoke, expiry, statement debit/credit/transfers/refunds/running balance and cross-user statement denial';
+end $$;
+rollback;

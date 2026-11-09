@@ -3,7 +3,6 @@ import {
   SupabaseClient,
 } from "npm:@supabase/supabase-js@2.110.0";
 import * as jose from "npm:jose@6.1.0";
-import { consentPage } from "./consent.ts";
 import { openapi } from "./openapi.ts";
 
 // The service credential exists only in the Edge Function environment.
@@ -91,6 +90,7 @@ function idem(req: Request): string {
 }
 interface Context {
   uid: string;
+  personalTokenId?: string;
   clientId?: string;
   sessionId: string;
   profile: Record<string, unknown>;
@@ -104,8 +104,67 @@ async function context(req: Request): Promise<Context> {
   if (!token) {
     throw new ApiError("unauthorized", "Authentication required", 401);
   }
-  const decoded = jose.decodeJwt(token);
-  const algorithm = jose.decodeProtectedHeader(token).alg;
+  if (token.startsWith("fgt_")) {
+    if (!/^fgt_[0-9a-f]{64}$/.test(token)) {
+      throw new ApiError("unauthorized", "Invalid personal token", 401);
+    }
+    const hash = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)),
+      ),
+    ).map((x) => x.toString(16).padStart(2, "0")).join("");
+    let info: any;
+    try {
+      info = await rpc("authenticate_personal_token", { hash });
+    } catch {
+      throw new ApiError(
+        "unauthorized",
+        "Token invalid, expired, paused or revoked",
+        401,
+      );
+    }
+    if (
+      !await rpc("check_rate_limit", {
+        bucket: "pat:" + info.token_id,
+        max_attempts: 120,
+        window_seconds: 60,
+      })
+    ) {
+      throw new ApiError(
+        "rate_limited",
+        "Token request limit; retry in one minute",
+        429,
+      );
+    }
+    return {
+      uid: info.uid,
+      personalTokenId: info.token_id,
+      clientId: info.client_id,
+      connectionId: info.connection_id,
+      sessionId: "",
+      profile: info.profile,
+      token,
+      user: createClient(internal, anonKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        db: { schema: "financegpt" },
+      }),
+    };
+  }
+  let decoded: jose.JWTPayload;
+  let algorithm: string | undefined;
+  try {
+    decoded = jose.decodeJwt(token);
+    algorithm = jose.decodeProtectedHeader(token).alg;
+  } catch {
+    throw new ApiError("unauthorized", "Invalid token", 401);
+  }
+  if (decoded.client_id) {
+    throw new ApiError(
+      "unauthorized",
+      "OAuth access retired; generate a personal token in Finance Tracker",
+      401,
+    );
+  }
   let claims: jose.JWTPayload;
   try {
     const options = {
@@ -172,7 +231,7 @@ async function connection(c: Context) {
   if (!c.clientId) {
     throw new ApiError(
       "permission_denied",
-      "OAuth agent session required",
+      "Personal token required",
       403,
     );
   }
@@ -279,6 +338,16 @@ async function read(c: Context, table: string, url: URL, scope: string) {
     Math.max(1, Number(url.searchParams.get("limit") || 50)),
   );
   let q = service.from(table).select("*").eq("user_id", c.uid);
+  if (c.clientId && table === "export_jobs") {
+    q = q.eq("requested_by_connection_id", c.connectionId);
+  }
+  if (c.clientId && table === "import_jobs") {
+    throw new ApiError(
+      "permission_denied",
+      "Trusted user session required",
+      403,
+    );
+  }
   if (c.clientId) {
     const accounts = c.policy?.account_allowlist || [],
       categories = c.policy?.category_allowlist || [];
@@ -478,7 +547,50 @@ async function forecast(
   };
 }
 
+async function accountStatement(
+  c: Context,
+  account: unknown,
+  start: unknown,
+  end: unknown,
+) {
+  await authorize(c, "transactions:read");
+  if (c.clientId) {
+    await authorize(c, "accounts:read");
+    if (
+      (c.policy?.account_allowlist?.length &&
+        !c.policy.account_allowlist.includes(account)) ||
+      c.policy?.category_allowlist?.length
+    ) {
+      throw new ApiError(
+        "permission_denied",
+        "Statement requires permission for this account and all its categories",
+        403,
+      );
+    }
+  }
+  if (
+    typeof account !== "string" || !/^[0-9a-f-]{36}$/.test(account) ||
+    typeof start !== "string" || typeof end !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)
+  ) {
+    throw new ApiError(
+      "validation_error",
+      "Account UUID and inclusive start/end dates YYYY-MM-DD required",
+    );
+  }
+  return await rpc("account_statement_data", {
+    uid: c.uid,
+    account,
+    date_from: start,
+    date_to: end,
+  });
+}
 const toolSpecs = [
+  [
+    "get_account_statement",
+    "transactions:read",
+    "Read own account journal statement with inclusive dates, debit, credit and running balance",
+  ],
   [
     "request_export_report",
     "reports:export",
@@ -531,6 +643,18 @@ const toolSpecs = [
   ],
 ] as const;
 function inputSchema(name: string) {
+  if (name === "get_account_statement") {
+    return {
+      type: "object",
+      properties: {
+        account_id: { type: "string", format: "uuid" },
+        start: { type: "string", format: "date" },
+        end: { type: "string", format: "date" },
+      },
+      required: ["account_id", "start", "end"],
+      additionalProperties: false,
+    };
+  }
   if (name === "request_export_report") {
     return {
       type: "object",
@@ -660,10 +784,10 @@ function inputSchema(name: string) {
   };
 }
 async function mcp(req: Request, c: Context, url: URL) {
-  if (!c.clientId) {
+  if (!c.personalTokenId) {
     throw new ApiError(
       "permission_denied",
-      "MCP requires a consented OAuth client token",
+      "MCP requires a personal token generated in Finance Tracker",
       403,
     );
   }
@@ -755,6 +879,14 @@ async function mcp(req: Request, c: Context, url: URL) {
     if (tool[1]) await authorize(c, tool[1]);
     else await connection(c);
     switch (tool[0]) {
+      case "get_account_statement":
+        output = await accountStatement(
+          c,
+          args.account_id,
+          args.start,
+          args.end,
+        );
+        break;
       case "get_financial_summary":
         output = await summary(c, scopeUrl);
         break;
@@ -951,16 +1083,16 @@ Deno.serve(async (req: Request) => {
       return json({ status: "ok", schema: "financegpt", version: "1.0.0" });
     }
     if (path === "/openapi.json") return json(openapi(base));
-    if (path === "/consent" && req.method === "GET") {
-      return consentPage(publicUrl, base, anonKey, requestId);
-    }
-    if (path.includes("/.well-known/oauth-protected-resource")) {
+    if (
+      path === "/consent" ||
+      path.includes("/.well-known/oauth-protected-resource") ||
+      path.startsWith("/api/v1/oauth/")
+    ) {
       return json({
-        resource: `${base}/mcp`,
-        authorization_servers: [`${publicUrl}/auth/v1`],
-        bearer_methods_supported: ["header"],
-        scopes_supported: ["email", "profile"],
-      });
+        code: "oauth_retired",
+        message:
+          "Generate a personal API/MCP token in Finance Tracker. Use Authorization: Bearer fgt_...",
+      }, 410);
     }
     if (path === "/api/v1/auth/login" && req.method === "POST") {
       const body = await req.json();
@@ -1061,87 +1193,59 @@ Deno.serve(async (req: Request) => {
       });
     }
     active(c);
-    if (path === "/api/v1/oauth/consent" && req.method === "POST") {
+    if (path === "/api/v1/tokens") {
       trusted(c);
-      const p = await req.json();
-      const detailsResponse = await fetch(
-        `${internal}/auth/v1/oauth/authorizations/${
-          encodeURIComponent(p.authorization_id)
-        }`,
-        { headers: { Authorization: `Bearer ${c.token}`, apikey: anonKey } },
-      );
-      const details = await detailsResponse.json();
-      if (!detailsResponse.ok) {
-        throw new ApiError("validation_error", "Invalid authorization request");
+      if (req.method === "GET") {
+        return json({
+          data: await checked(c.user.rpc("list_personal_tokens")),
+        });
       }
-      const clientId = details.client?.id || details.client_id;
-      const clientName = details.client?.name || details.client?.client_name ||
-        "OAuth client";
-      if (p.approved) {
-        const known = await service.auth.admin.oauth.getClient(clientId);
-        if (known.error || known.data?.client_uri !== `${base}/mcp`) {
+      if (req.method === "POST") {
+        if (
+          !await rpc("check_rate_limit", {
+            bucket: "token-create:" + c.uid,
+            max_attempts: 5,
+            window_seconds: 60,
+          })
+        ) {
           throw new ApiError(
-            "unsupported_client",
-            "Client is not registered for Finance Tracker",
+            "rate_limited",
+            "Please wait before generating another token",
+            429,
           );
         }
-        const existing = await checked(
-          service.from("agent_connections").select("id").eq("user_id", c.uid)
-            .eq("oauth_client_id", clientId).maybeSingle(),
-        );
-        if (!existing) {
-          const conn = await checked(
-            service.from("agent_connections").insert({
-              user_id: c.uid,
-              oauth_client_id: clientId,
-              display_name: clientName,
-              status: "active",
-            }).select().single(),
-          );
-          const defaults = [
-            "accounts:read",
-            "transactions:read",
-            "transactions:create",
-            "transactions:update",
-            "categories:read",
-            "budgets:read",
-            "forecasts:read",
-            "forecasts:simulate",
-            "analytics:read",
-          ];
+        const p = await req.json();
+        return json(
           await checked(
-            service.from("agent_permissions").insert(
-              defaults.map((permission) => ({
-                user_id: c.uid,
-                connection_id: conn.id,
-                permission,
-                enabled: true,
-              })),
-            ),
-          );
-          await checked(
-            service.from("agent_policies").insert({
-              user_id: c.uid,
-              connection_id: conn.id,
+            c.user.rpc("generate_personal_token", {
+              display_name: p.name,
+              expires_in_days: p.expires_in_days ?? 90,
             }),
-          );
-        }
+          ),
+          201,
+        );
       }
-      const response = await fetch(
-        `${internal}/auth/v1/oauth/authorizations/${
-          encodeURIComponent(p.authorization_id)
-        }/consent`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${c.token}`,
-            apikey: anonKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ action: p.approved ? "approve" : "deny" }),
-        },
+    }
+    const tokenRoute = path.match(/^\/api\/v1\/tokens\/([0-9a-f-]+)$/);
+    if (tokenRoute && req.method === "DELETE") {
+      trusted(c);
+      await checked(
+        c.user.rpc("revoke_personal_token", { token_id: tokenRoute[1] }),
       );
-      return json(await response.json(), response.status);
+      return json({ status: "revoked" });
+    }
+    const statementRoute = path.match(
+      /^\/api\/v1\/accounts\/([0-9a-f-]+)\/statement$/,
+    );
+    if (statementRoute && req.method === "GET") {
+      return json(
+        await accountStatement(
+          c,
+          statementRoute[1],
+          url.searchParams.get("start"),
+          url.searchParams.get("end"),
+        ),
+      );
     }
     if (path === "/api/v1/imports/extract-pdf" && req.method === "POST") {
       trusted(c);
@@ -1231,68 +1335,11 @@ Deno.serve(async (req: Request) => {
       }
     }
     if (path === "/api/v1/agents/connections" && req.method === "POST") {
-      trusted(c);
-      idem(req);
-      const p = await req.json();
-      if (!p.display_name || !p.oauth_client_id) {
-        throw new ApiError(
-          "validation_error",
-          "Name and OAuth client ID required",
-        );
-      }
-      const known = await service.auth.admin.oauth.getClient(p.oauth_client_id);
-      if (known.error) {
-        throw new ApiError(
-          "unsupported_client",
-          "Register a valid OAuth 2.1 client first",
-        );
-      }
-      const conn = await checked(
-        service.from("agent_connections").upsert({
-          user_id: c.uid,
-          display_name: String(p.display_name).slice(0, 100),
-          oauth_client_id: p.oauth_client_id,
-          status: "active",
-        }, { onConflict: "user_id,oauth_client_id" }).select().single(),
+      throw new ApiError(
+        "oauth_retired",
+        "Use POST /tokens to generate an API/MCP token",
+        410,
       );
-      const defaults = [
-        "accounts:read",
-        "transactions:read",
-        "transactions:create",
-        "transactions:update",
-        "categories:read",
-        "budgets:read",
-        "forecasts:read",
-        "forecasts:simulate",
-        "analytics:read",
-      ];
-      await checked(
-        service.from("agent_permissions").upsert(
-          defaults.map((permission) => ({
-            user_id: c.uid,
-            connection_id: conn.id,
-            permission,
-            enabled: true,
-          })),
-          { onConflict: "connection_id,permission" },
-        ),
-      );
-      await checked(
-        service.from("agent_policies").upsert({
-          user_id: c.uid,
-          connection_id: conn.id,
-        }, { onConflict: "connection_id" }),
-      );
-      await checked(
-        service.from("agent_audit_logs").insert({
-          user_id: c.uid,
-          connection_id: conn.id,
-          event_type: "connection.created",
-          actor: "self",
-          outcome: "ok",
-        }),
-      );
-      return json(conn, 201);
     }
     const policy = path.match(
       /^\/api\/v1\/agents\/connections\/([0-9a-f-]+)\/policy$/,
@@ -1697,7 +1744,7 @@ Deno.serve(async (req: Request) => {
       status === 401
         ? {
           "WWW-Authenticate":
-            `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`,
+            'Bearer realm="Finance Tracker", error="invalid_token"',
         }
         : {},
     );

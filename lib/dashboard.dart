@@ -453,7 +453,7 @@ extension _GlassDashboard on _FinanceShellState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final item in [(false, 'Arus kas'), (true, 'Pengeluaran')])
+              for (final item in [(false, 'Arus kas'), (true, 'Forecast')])
                 InkWell(
                   borderRadius: BorderRadius.circular(18),
                   onTap: () => update(() => dashboardChartExpense = item.$1),
@@ -505,7 +505,7 @@ extension _GlassDashboard on _FinanceShellState {
             ),
             const SizedBox(width: 10),
             const Text(
-              'Tren keuangan',
+              'Aktual & forecast',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -529,7 +529,21 @@ extension _GlassDashboard on _FinanceShellState {
                 ],
               ),
             const SizedBox(height: 24),
-            cashflowChart(expenseLine: dashboardChartExpense, compact: true),
+            cashflowChart(forecastLine: dashboardChartExpense, compact: true),
+            const SizedBox(height: 12),
+            Text(
+              dashboardChartExpense
+                  ? 'Forecast pengeluaran: ${money(forecast.estimate, store.currency)} · ${model}_v1'
+                  : 'Estimasi arus kas akhir periode: ${money(income - expense + scheduledIncome - (forecast.estimate - expense), store.currency)}',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            TextButton(
+              onPressed: () => go(5),
+              child: const Text('Lihat asumsi forecast'),
+            ),
           ],
         );
       },
