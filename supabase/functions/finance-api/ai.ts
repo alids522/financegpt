@@ -732,11 +732,22 @@ async function send(chat: Row, p: Row, d: Dependencies) {
         try {
           const tool = tools.find((t) => t.name === call.name);
           if (!tool) throw Error("Tool tidak diizinkan.");
+          if (
+            !call.args || typeof call.args !== "object" ||
+            Array.isArray(call.args)
+          ) throw Error("Argumen tool harus berupa objek.");
           const t = d.tools.find((x) => x.name === call.name) as any;
           const write = call.name === "finance_write" ||
             t && t.method !== "GET";
           if (write) {
+            if (
+              !call.args.payload || typeof call.args.payload !== "object" ||
+              Array.isArray(call.args.payload)
+            ) throw Error("Payload tindakan harus berupa objek.");
             if (call.name === "finance_write") {
+              if (
+                !["POST", "PATCH", "DELETE"].includes(String(call.args.method))
+              ) throw Error("Metode tindakan tidak valid.");
               permittedPath(String(call.args.path), true);
             }
             // Automatic receipt recording is opt-in; structured totals are checked again here.

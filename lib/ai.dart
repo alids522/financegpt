@@ -231,8 +231,9 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
         'interest_paid',
         'target_amount',
         'default_budget',
-      ].contains(k))
+      ].contains(k)) {
         return money(v, unit);
+      }
       final table = switch (k) {
         'account_id' || 'destination_account_id' => 'accounts',
         'category_id' || 'parent_id' => 'categories',
@@ -242,7 +243,7 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
       };
       if (table != null) return widget.store.name(table, v);
       if (v is bool) return v ? 'Ya' : 'Tidak';
-      if (v is Map)
+      if (v is Map) {
         return v.entries
             .where(
               (e) => ![
@@ -254,9 +255,10 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
             )
             .map(
               (e) =>
-                  '${labels[e.key] ?? e.key.toString().replaceAll('_', ' ')}: ${show(e.key, e.value, v['currency'] ?? unit)}',
+                  '${labels[e.key] ?? e.key.toString().replaceAll('_', ' ')}: ${show(e.key, e.value, (v['currency'] ?? unit).toString())}',
             )
             .join('\n');
+      }
       if (v is List) return v.map((x) => show('item', x, unit)).join('\n');
       return {
             'expense': 'Pengeluaran',
@@ -299,7 +301,7 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: SelectableText(
-              '${labels[e.key] ?? e.key.replaceAll('_', ' ')}: ${show(e.key, e.value, currency)}',
+              '${labels[e.key] ?? e.key.replaceAll('_', ' ')}: ${show(e.key, e.value, currency.toString())}',
             ),
           ),
         if (payload['attachment_path'] != null)
