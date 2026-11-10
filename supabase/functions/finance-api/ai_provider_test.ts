@@ -73,6 +73,10 @@ Deno.test("Gemini retains opaque thought signatures on function calls", () => {
   const b = w.body as any;
   assert(b.contents[0].parts[0].thoughtSignature === "opaque-signature");
   assert(b.contents[1].parts[0].functionResponse.name === "read_accounts");
+  assert(
+    b.tools[0].functionDeclarations[0].parametersJsonSchema.type === "object",
+  );
+  assert(!("parameters" in b.tools[0].functionDeclarations[0]));
 });
 Deno.test("all adapters normalize usage and truncation", () => {
   assert(

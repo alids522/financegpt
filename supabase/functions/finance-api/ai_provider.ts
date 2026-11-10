@@ -107,7 +107,7 @@ export function wire(p: Provider, messages: Message[], tools: Tool[] = []) {
               functionDeclarations: tools.map((t) => ({
                 name: t.name,
                 description: t.description,
-                parameters: t.parameters,
+                parametersJsonSchema: t.parameters,
               })),
             }],
           }
