@@ -203,7 +203,7 @@ class FinanceStore extends ChangeNotifier {
     if (body != null) req.body = jsonEncode(body);
     final res = await http.Response.fromStream(
       await req.send(),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(Duration(seconds: path.startsWith('ai/') ? 180 : 30));
     final value = jsonDecode(res.body);
     if (res.statusCode >= 400) {
       throw Exception(

@@ -1,3 +1,4 @@
+import { managed } from "./managed.ts";
 const uuid = { type: "string", format: "uuid" };
 const transaction = {
   type: "object",
@@ -245,7 +246,7 @@ export function openapi(base: string) {
     paths["/agents/approvals/{id}/" + action] = {
       parameters: [{ name: "id", in: "path", required: true, schema: uuid }],
       post: operation(
-        "Trusted user " + action + "; OAuth self-approval is denied",
+        "Trusted user " + action + "; Agent self-approval is denied",
         "post",
       ),
     };
@@ -276,10 +277,78 @@ export function openapi(base: string) {
       ),
     };
   }
+  (paths["/transactions/{id}"] as Record<string, unknown>).delete = operation(
+    "Void owned transaction with expected_version and reason; agents require approval",
+    "delete",
+  );
+  for (const [path, [table, scope]] of Object.entries(managed)) {
+    paths["/" + path] = {
+      get: operation(
+        "List own " + table + "; token scope " + scope +
+          ":read; offset/limit pagination",
+      ),
+      post: operation(
+        "Create " + table + "; token scope " + scope + ":write",
+        "post",
+      ),
+    };
+    paths["/" + path + "/{id}"] = {
+      parameters: [{ name: "id", in: "path", required: true, schema: uuid }],
+      get: operation("Read own " + table),
+      patch: operation(
+        "Patch " + table + "; expected_version required",
+        "patch",
+      ),
+      delete: operation(
+        "Delete/archive/disable " + table +
+          "; expected_version required; token requires approval",
+        "delete",
+      ),
+    };
+  }
+  for (
+    const [path, methods] of Object.entries({
+      "providers": ["get", "post"],
+      "providers/{id}": ["patch", "delete"],
+      "providers/{id}/models": ["post"],
+      "providers/{id}/test": ["post"],
+      "chats": ["get", "post"],
+      "chats/{id}": ["delete"],
+      "chats/{id}/messages": ["get"],
+      "chats/{id}/send": ["post"],
+      "actions/{id}/approve": ["post"],
+      "actions/{id}/reject": ["post"],
+    })
+  ) {
+    paths["/ai/" + path] = {
+      ...(path.includes("{id}")
+        ? {
+          parameters: [{
+            name: "id",
+            in: "path",
+            required: true,
+            schema: uuid,
+          }],
+        }
+        : {}),
+      ...Object.fromEntries(
+        methods.map(
+          (method) => [
+            method,
+            operation(
+              "Trusted owner session only; personal API tokens cannot manage AI settings, chats or approvals. " +
+                path,
+              method,
+            ),
+          ],
+        ),
+      ),
+    };
+  }
   return {
     openapi: "3.1.0",
     info: {
-      title: "Finance Tracker API",
+      title: "Adoetz Finance API",
       version: "1.0.0",
       description:
         "Integer minor units. UTC timestamps with user-timezone reporting. Account ownership, active sessions, idempotency and per-user personal token permissions are enforced server-side.",

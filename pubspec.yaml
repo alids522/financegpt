@@ -64,6 +64,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/fonts/Inter.ttf
+    - assets/branding/adoetz-finance.png
   fonts:
     - family: Inter
       fonts:

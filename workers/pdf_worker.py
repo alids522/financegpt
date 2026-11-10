@@ -142,8 +142,28 @@ class Handler(BaseHTTPRequestHandler):
             reader = PdfReader(io.BytesIO(data), strict=False)
             if reader.is_encrypted: raise ValueError('PDF terenkripsi tidak didukung. Ekspor salinan tanpa password.')
             if len(reader.pages) > 150: raise ValueError('Maksimal 150 halaman per import.')
-            text = '\n'.join(page.extract_text(extraction_mode='layout') or '' for page in reader.pages)
-            if len(text.strip()) < 15: raise ValueError('PDF hasil scan tidak didukung. Gunakan PDF digital atau CSV; OCR tersedia di fase berikutnya.')
+            pages = [page.extract_text(extraction_mode='layout') or '' for page in reader.pages]
+            text = '\n'.join(pages)
+            if body.get('ai_vision'):
+                scans = [i for i, page in enumerate(pages) if len(page.strip()) < 15]
+                if len(scans) > 8: raise ValueError('Maksimal 8 halaman scan per analisis AI. Pecah dokumen menjadi beberapa file.')
+                if len(text) > 45000: raise ValueError('Teks PDF terlalu panjang untuk satu analisis AI. Pecah dokumen menjadi beberapa file.')
+                images = []
+                if scans:
+                    import pypdfium2 as pdfium
+                    pdf = pdfium.PdfDocument(data)
+                    for index in scans:
+                        page = pdf[index]
+                        width, height = page.get_size()
+                        bitmap = page.render(scale=min(1.5, 1600/max(width,height)))
+                        image = bitmap.to_pil().convert('RGB')
+                        image.thumbnail((1600, 1600))
+                        out = io.BytesIO(); image.save(out, format='JPEG', quality=85)
+                        images.append({'mime':'image/jpeg','data':base64.b64encode(out.getvalue()).decode(),'page':index+1})
+                        image.close(); bitmap.close(); page.close()
+                    pdf.close()
+                return self.respond(200, {'text':text,'images':images,'pages':len(pages),'review_required':True})
+            if len(text.strip()) < 15: raise ValueError('PDF scan memerlukan model vision di Finance AI.')
             return self.respond(200, {'text': text[:2_000_000], 'pages': len(reader.pages), 'review_required': True})
         except (ValueError, KeyError, Exception) as error:
             return self.respond(422, {'message': str(error)[:250]})

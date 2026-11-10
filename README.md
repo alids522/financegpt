@@ -1,4 +1,4 @@
-# Finance Tracker
+# Adoetz Finance
 
 Flutter Web, Android, and iOS source implementing the [Finance Tracker PRD v1.0](docs/Finance_Tracker_PRD_v1.0.md). Indonesian UI, Inter typography, translucent glass light/dark/system themes, desktop sidebar/tablet rail/mobile drawer, and no bottom navigation.
 
@@ -6,9 +6,11 @@ The [visual refresh](docs/UI_REFRESH.md) follows the user-provided reference ima
 
 ## Download
 
-Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 28 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
+Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 31 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
 
 Latest verified update: [build 17 APK](https://github.com/alids522/financegpt/releases/download/v1.0.0-build.17/finance-tracker-android.apk), with personal API/MCP tokens, per-account PDF/CSV statements, dashboard forecast, Android Back handling and a floating mobile drawer. See the [verification record](docs/TOKENS_STATEMENTS.md).
+
+See [Finance AI and expanded REST/MCP controls](docs/AI_INTEGRATION.md) for BYOK setup, privacy, context management and supported document formats.
 
 ## Implemented
 

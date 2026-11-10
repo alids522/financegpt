@@ -1,6 +1,6 @@
 {
-    "name": "Finance Tracker",
-    "short_name": "Finance Tracker",
+    "name": "Adoetz Finance",
+    "short_name": "Adoetz Finance",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#456D9A",

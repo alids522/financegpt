@@ -295,7 +295,15 @@ class FinanceLogo extends StatelessWidget {
         ),
       ],
     ),
-    child: Icon(Icons.bar_chart_rounded, color: Colors.white, size: size * .68),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(size * .28),
+      child: Image.asset(
+        'assets/branding/adoetz-finance.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      ),
+    ),
   );
 }
 

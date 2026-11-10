@@ -22,6 +22,7 @@ part 'agents.dart';
 part 'form_preferences.dart';
 part 'dashboard.dart';
 part 'statements.dart';
+part 'ai.dart';
 
 const navigation = <(String, String, IconData)>[
   ('OVERVIEW', 'Dashboard', Icons.space_dashboard_outlined),
@@ -40,6 +41,7 @@ const navigation = <(String, String, IconData)>[
   ('', 'Settings', Icons.settings_outlined),
   ('ADMIN', 'User Management', Icons.manage_accounts_outlined),
   ('', 'Admin Audit Logs', Icons.policy_outlined),
+  ('AI', 'Finance AI', Icons.auto_awesome_outlined),
 ];
 
 class FinanceShell extends StatefulWidget {
@@ -499,7 +501,7 @@ class _FinanceShellState extends State<FinanceShell> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Finance Tracker',
+                        'Adoetz Finance',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -520,7 +522,7 @@ class _FinanceShellState extends State<FinanceShell> {
             padding: EdgeInsets.zero,
             children: [
               for (var i = 0; i < navigation.length; i++)
-                if (i < 14 || store.admin) ...[
+                if (i < 14 || i == 16 || store.admin) ...[
                   if (navigation[i].$1.isNotEmpty && !rail)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 22, 8, 10),
@@ -1029,6 +1031,7 @@ class _FinanceShellState extends State<FinanceShell> {
     12 => agentsPage(),
     13 => settingsPage(),
     14 => usersPage(),
+    16 => FinanceAiPage(store: store),
     _ => adminAuditPage(),
   };
 }

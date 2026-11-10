@@ -45,7 +45,7 @@ class _FinanceAppState extends State<FinanceApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Finance Tracker',
+    title: 'Adoetz Finance',
     debugShowCheckedModeBanner: false,
     theme: financeTheme(Brightness.light),
     darkTheme: financeTheme(Brightness.dark),
@@ -166,7 +166,7 @@ class _AuthPageState extends State<AuthPage> {
                     const FinanceLogo(size: 46),
                     const SizedBox(width: 12),
                     const Text(
-                      'Finance Tracker',
+                      'Adoetz Finance',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,

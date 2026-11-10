@@ -4,6 +4,8 @@ import {
 } from "npm:@supabase/supabase-js@2.110.0";
 import * as jose from "npm:jose@6.1.0";
 import { openapi } from "./openapi.ts";
+import { managed, managedTools } from "./managed.ts";
+import { aiRoute } from "./ai.ts";
 
 // The service credential exists only in the Edge Function environment.
 const internal = Deno.env.get("SUPABASE_URL")!;
@@ -1071,10 +1073,161 @@ async function budgetActuals(c: Context, _url: URL) {
   };
 }
 
-Deno.serve(async (req: Request) => {
+async function managedRead(c: Context, path: string, url: URL, id?: string) {
+  const [table, scope] = managed[path as keyof typeof managed];
+  await authorize(c, scope + ":read");
+  let q = service.from(table).select("*").eq("user_id", c.uid).order("id");
+  if (id) q = q.eq("id", id);
+  const offset = Number(url.searchParams.get("offset") || 0),
+    limit = Number(url.searchParams.get("limit") || 50);
+  if (
+    !Number.isSafeInteger(offset) || offset < 0 ||
+    !Number.isSafeInteger(limit) || limit < 1 || limit > 100
+  ) throw new ApiError("validation_error", "Invalid pagination");
+  // Restricted connections cannot enumerate resource payloads outside their policy.
+  if (c.clientId) {
+    const a = c.policy?.account_allowlist || [],
+      g = c.policy?.category_allowlist || [];
+    if (
+      (a.length || g.length) &&
+      ["goal_allocations", "debts", "debt_payments"].includes(table)
+    ) {
+      throw new ApiError(
+        "permission_denied",
+        "Unrestricted policy required",
+        403,
+      );
+    }
+    if (table === "categories" && g.length) q = q.in("id", g);
+    if (table === "savings_goals") {
+      if (a.length) q = q.in("account_id", a);
+      if (g.length) {
+        throw new ApiError(
+          "permission_denied",
+          "Category policy cannot scope goals",
+          403,
+        );
+      }
+    }
+    if (["transaction_templates", "recurring_rules"].includes(table)) {
+      if (a.length) q = q.in("payload_json->>account_id", a);
+      if (g.length) q = q.in("payload_json->>category_id", g);
+    }
+  }
+  let rows = await checked(q.range(offset, offset + limit));
+  if (
+    c.clientId && ["transaction_templates", "recurring_rules"].includes(table)
+  ) {
+    rows = rows.filter((r: any) => {
+      const p = r.payload_json,
+        a = c.policy.account_allowlist,
+        g = c.policy.category_allowlist;
+      return (!a.length || !p.destination_account_id ||
+        a.includes(p.destination_account_id)) &&
+        (!g.length ||
+          !(p.splits || []).some((s: any) => !g.includes(s.category_id)));
+    });
+  }
+  return {
+    data: rows.slice(0, limit),
+    next_offset: rows.length > limit ? offset + limit : null,
+  };
+}
+async function managedCall(
+  c: Context,
+  path: string,
+  method: string,
+  p: any,
+  id: string | null,
+  key: string,
+) {
+  const [table, scope] = managed[path as keyof typeof managed];
+  await authorize(c, scope + ":write");
+  return rpc("manage_resource", {
+    uid: c.uid,
+    client: c.clientId || null,
+    resource: table,
+    method,
+    payload: p,
+    record_id: id,
+    idempotency_key: key,
+  });
+}
+async function mcpManaged(req: Request, c: Context, url: URL) {
+  if (!c.personalTokenId) {
+    throw new ApiError("permission_denied", "Personal token required", 403);
+  }
+  const msg = await req.clone().json();
+  const tool = managedTools.find((t) => t.name === msg.params?.name);
+  if (msg.method === "tools/call" && tool) {
+    try {
+      const a = msg.params.arguments || {};
+      const u = new URL(url);
+      for (const k of ["offset", "limit"]) {
+        if (a[k] !== undefined) u.searchParams.set(k, String(a[k]));
+      }
+      const data = tool.method === "GET"
+        ? await managedRead(c, tool.path, u)
+        : await managedCall(
+          c,
+          tool.path,
+          tool.method,
+          a.payload || {},
+          a.record_id || null,
+          String(a.idempotency_key || ""),
+        );
+      return json({
+        jsonrpc: "2.0",
+        id: msg.id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(data) }],
+          structuredContent: data,
+        },
+      });
+    } catch (e) {
+      return json({
+        jsonrpc: "2.0",
+        id: msg.id,
+        result: {
+          isError: true,
+          content: [{ type: "text", text: String((e as Error).message) }],
+        },
+      });
+    }
+  }
+  const response = await mcp(req, c, url);
+  if (msg.method === "tools/list" && response.ok) {
+    const value = await response.json();
+    const conn = await connection(c);
+    const perms = await checked(
+      service.from("agent_permissions").select("permission").eq(
+        "user_id",
+        c.uid,
+      ).eq("connection_id", conn.id).eq("enabled", true),
+    );
+    value.result.tools.push(
+      ...managedTools.filter((t) =>
+        perms.some((p: any) => p.permission === t.scope)
+      ).map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.parameters,
+        annotations: {
+          readOnlyHint: t.method === "GET",
+          destructiveHint: t.method === "DELETE",
+          openWorldHint: false,
+          idempotentHint: true,
+        },
+      })),
+    );
+    return json(value);
+  }
+  return response;
+}
+async function handleRequest(req: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
   const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/finance-api/, "");
+  const path = url.pathname.replace(/^\/(?:functions\/v1\/)?finance-api/, "");
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });
   }
@@ -1135,7 +1288,67 @@ Deno.serve(async (req: Request) => {
       return json({ refresh_token: data.session.refresh_token });
     }
     const c = await context(req);
-    if (path === "/mcp") return await mcp(req, c, url);
+    if (path === "/mcp") return await mcpManaged(req, c, url);
+    if (path.startsWith("/api/v1/ai/")) {
+      trusted(c);
+      active(c);
+      if (
+        !await rpc("check_rate_limit", {
+          bucket: "ai:" + c.uid,
+          max_attempts: 120,
+          window_seconds: 60,
+        })
+      ) throw new ApiError("rate_limited", "Too many AI requests", 429);
+      return json(
+        await aiRoute(path.replace("/api/v1", ""), req, {
+          db: service,
+          checked,
+          uid: c.uid,
+          profile: c.profile,
+          tools: managedTools as any,
+          route: async (p, method, body, key) => {
+            const response = await handleRequest(
+              new Request(base + "/api/v1/" + p, {
+                method,
+                headers: {
+                  Authorization: "Bearer " + c.token,
+                  "Content-Type": "application/json",
+                  "Idempotency-Key": key || crypto.randomUUID(),
+                },
+                body: body === undefined ? undefined : JSON.stringify(body),
+              }),
+            );
+            const result = await response.json();
+            if (!response.ok) {
+              throw Error(result.message || "Finance tool failed");
+            }
+            return result;
+          },
+        }),
+      );
+    }
+    const managedMatch = path.match(
+      /^\/api\/v1\/(categories|transaction-templates|recurring|savings-goals|goal-allocations|debts|debt-payments)(?:\/([0-9a-f-]+))?$/,
+    );
+    if (managedMatch) {
+      if (req.method === "GET") {
+        return json(
+          await managedRead(c, managedMatch[1], url, managedMatch[2]),
+        );
+      }
+      if (["POST", "PATCH", "DELETE"].includes(req.method)) {
+        return json(
+          await managedCall(
+            c,
+            managedMatch[1],
+            req.method,
+            await req.json(),
+            managedMatch[2] || null,
+            idem(req),
+          ),
+        );
+      }
+    }
     if (path === "/api/v1/auth/me") {
       trusted(c);
       return json(c.profile);
@@ -1370,6 +1583,13 @@ Deno.serve(async (req: Request) => {
         "reports:export",
         "transactions:import",
         "recurring:write",
+        "recurring:read",
+        "templates:read",
+        "templates:write",
+        "goals:read",
+        "goals:write",
+        "debts:read",
+        "debts:write",
       ]);
       const perms = Object.entries(p.permissions || {});
       if (perms.some(([s]) => !allowed.has(s))) {
@@ -1643,6 +1863,27 @@ Deno.serve(async (req: Request) => {
         }, idem(req)),
       );
     }
+    if (transaction && req.method === "DELETE") {
+      const p = await req.json();
+      if (typeof p.reason !== "string" || p.reason.trim().length < 3) {
+        throw new ApiError("validation_error", "Deletion reason required");
+      }
+      const old = await checked(
+        service.from("transactions").select("*").eq("id", transaction[1]).eq(
+          "user_id",
+          c.uid,
+        ).single(),
+      );
+      return json(
+        await mutate(c, "transactions:delete", {
+          ...old,
+          id: transaction[1],
+          status: "voided",
+          notes: p.reason,
+          expected_version: p.expected_version,
+        }, idem(req)),
+      );
+    }
     if (resource === "accounts" && req.method === "POST") {
       trusted(c);
       return json(
@@ -1749,4 +1990,5 @@ Deno.serve(async (req: Request) => {
         : {},
     );
   }
-});
+}
+Deno.serve(handleRequest);

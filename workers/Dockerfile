@@ -1,5 +1,5 @@
 FROM python:3.12-slim
-RUN pip install --no-cache-dir pypdf==6.2.0 reportlab==4.4.4 tzdata==2025.2
+RUN pip install --no-cache-dir pypdf==6.2.0 reportlab==4.4.4 tzdata==2025.2 pypdfium2==4.30.0 Pillow==11.3.0
 WORKDIR /app
 COPY pdf_worker.py .
 COPY Inter.ttf .

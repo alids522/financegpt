@@ -30,7 +30,7 @@ Future<Uint8List> buildAccountStatementPdf(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'FINANCE TRACKER',
+                'ADOETZ FINANCE',
                 style: pw.TextStyle(fontSize: 18, color: blue),
               ),
               pw.Text(
@@ -282,7 +282,7 @@ class _AccountStatementDialogState extends State<AccountStatementDialog> {
           'estatement-${widget.account['id']}-${range.start}-${range.end}.$format';
       if (format == 'csv') {
         final records = <List<dynamic>>[
-          ['Finance Tracker E-statement', data['account_name'], currency],
+          ['Adoetz Finance E-statement', data['account_name'], currency],
           ['Periode', range.start, range.end],
           ['Saldo awal (minor units)', data['opening_minor']],
           ['Total debit (minor units)', data['debit_minor']],

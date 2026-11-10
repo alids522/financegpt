@@ -1,0 +1,27 @@
+begin;
+do $$declare a uuid:=gen_random_uuid();b uuid:=gen_random_uuid();sa uuid:=gen_random_uuid();sb uuid:=gen_random_uuid();t jsonb;conn financegpt.agent_connections;client text;cat jsonb;goal jsonb;debt jsonb;r jsonb;failed boolean;foreign_account uuid;begin
+ insert into auth.users(id,email,encrypted_password,raw_user_meta_data)values(a,'ai-qa-'||a||'@example.com','fixture',jsonb_build_object('app','financegpt','username','aqa_'||left(a::text,8))),(b,'ai-qa-'||b||'@example.com','fixture',jsonb_build_object('app','financegpt','username','aqa_'||left(b::text,8)));
+ insert into auth.sessions(id,user_id,created_at,updated_at)values(sa,a,now(),now()),(sb,b,now(),now());
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',b,'role','authenticated','session_id',sb)::text,true);execute 'set local role authenticated';perform financegpt.initialize_profile();foreign_account:=(financegpt.create_account('{"name":"Foreign"}',gen_random_uuid()::text)->>'id')::uuid;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',a,'role','authenticated','session_id',sa)::text,true);perform financegpt.initialize_profile();t:=financegpt.generate_personal_token('Managed QA',30);
+ assert exists(select 1 from financegpt.agent_permissions where connection_id=(t->>'connection_id')::uuid and permission='goals:read'and enabled),'New read scopes missing';
+ perform financegpt.save_agent_policy((t->>'connection_id')::uuid,'{"permissions":{"categories:write":true,"templates:write":true,"recurring:write":true,"goals:write":true,"debts:write":true},"approval_mode":"risk"}',gen_random_uuid()::text);
+ failed:=false;begin perform 1 from financegpt.ai_providers;exception when insufficient_privilege then failed:=true;end;assert failed,'AI credential table exposed';
+ failed:=false;begin perform financegpt.manage_resource(a,null,'categories','POST','{}',null,gen_random_uuid()::text);exception when insufficient_privilege then failed:=true;end;assert failed,'Service-only resource RPC exposed';
+ execute 'reset role';select *into conn from financegpt.agent_connections where id=(t->>'connection_id')::uuid;client:=conn.oauth_client_id;
+ cat:=financegpt.manage_resource(a,client,'categories','POST','{"name":"API custom","type":"expense"}',null,'category-create-qa');
+ assert cat=financegpt.manage_resource(a,client,'categories','POST','{"name":"API custom","type":"expense"}',null,'category-create-qa'),'Idempotency failed';
+ r:=financegpt.manage_resource(a,client,'categories','PATCH','{"name":"API updated","expected_version":1}',(cat->'data'->>'id')::uuid,gen_random_uuid()::text);assert r->'data'->>'name'='API updated';
+ failed:=false;begin perform financegpt.manage_resource(a,client,'categories','PATCH','{"name":"stale","expected_version":1}',(cat->'data'->>'id')::uuid,gen_random_uuid()::text);exception when others then failed:=true;end;assert failed,'Stale update accepted';
+ failed:=false;begin perform financegpt.manage_resource(b,null,'categories','PATCH','{"name":"foreign","expected_version":2}',(cat->'data'->>'id')::uuid,gen_random_uuid()::text);exception when others then failed:=true;end;assert failed,'Cross-user mutation accepted';
+ failed:=false;begin perform financegpt.manage_resource(a,client,'transaction_templates','POST',jsonb_build_object('name','bad','payload_json',jsonb_build_object('account_id',foreign_account)),null,gen_random_uuid()::text);exception when others then failed:=true;end;assert failed,'Foreign template account accepted';
+ failed:=false;begin perform finance_private.agent_execute(a,conn,'transactions:create',jsonb_build_object('resource','categories','method','POST','payload','{"name":"bypass","type":"expense"}'::jsonb),gen_random_uuid()::text);exception when others then failed:=true;end;assert failed,'Operation scope bypass accepted';
+ goal:=financegpt.manage_resource(a,client,'savings_goals','POST','{"name":"Goal","target_amount":100000,"target_date":"2027-01-01","currency":"IDR"}',null,gen_random_uuid()::text);assert goal->>'status'='ok';
+ debt:=financegpt.manage_resource(a,client,'debts','POST','{"name":"Debt","counterparty":"QA","principal":100000,"due":"2027-01-01"}',null,gen_random_uuid()::text);
+ r:=financegpt.manage_resource(a,client,'debt_payments','POST',jsonb_build_object('debt_id',debt->'data'->>'id','principal_paid',10000),null,gen_random_uuid()::text);assert r->>'status'='pending_approval';
+ execute 'set local role authenticated';r:=financegpt.resolve_approval((r->>'action_id')::uuid,true);assert r->>'status'='ok','Managed approval failed';execute 'reset role';
+ failed:=false;begin perform finance_private.managed_resource(a,'debt_payments','POST',jsonb_build_object('debt_id',debt->'data'->>'id','principal_paid',100000),null);exception when others then failed:=true;end;assert failed,'Overpayment accepted';
+ r:=financegpt.manage_resource(a,client,'categories','DELETE','{"expected_version":2}',(cat->'data'->>'id')::uuid,gen_random_uuid()::text);assert r->>'status'='pending_approval';execute 'set local role authenticated';r:=financegpt.resolve_approval((r->>'action_id')::uuid,true);assert(r->'data'->>'archived')::boolean;execute 'reset role';
+ raise notice 'PASS managed CRUD, read defaults, policy scopes, ownership, version conflicts, idempotency, no scope bypass, approvals, overpayment denial and private AI credentials';
+end $$;
+rollback;
