@@ -134,6 +134,180 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
     await load();
   }
 
+  Widget actionDetails(FinanceRow action) {
+    const resources = {
+      'transactions': 'Transaksi',
+      'transfers': 'Transfer',
+      'accounts': 'Akun',
+      'categories': 'Kategori',
+      'transaction-templates': 'Template transaksi',
+      'transaction_templates': 'Template transaksi',
+      'recurring': 'Transaksi berulang',
+      'recurring_rules': 'Transaksi berulang',
+      'savings-goals': 'Tujuan tabungan',
+      'savings_goals': 'Tujuan tabungan',
+      'goal-allocations': 'Alokasi tabungan',
+      'goal_allocations': 'Alokasi tabungan',
+      'debts': 'Utang / piutang',
+      'debt-payments': 'Pembayaran utang',
+      'debt_payments': 'Pembayaran utang',
+      'budgets': 'Anggaran',
+      'exports': 'Ekspor laporan',
+      'imports': 'Import data',
+    };
+    final args = FinanceRow.from(action['args']);
+    final tool = '${action['tool']}';
+    final method =
+        args['method'] ??
+        (tool.startsWith('create_')
+            ? 'POST'
+            : tool.startsWith('update_')
+            ? 'PATCH'
+            : 'DELETE');
+    final resource =
+        args['path']?.toString().split('/').first ??
+        tool.substring(tool.indexOf('_') + 1);
+    final payload = FinanceRow.from(args['payload'] ?? {});
+    final currency =
+        payload['currency'] ??
+        widget.store
+            .rows('debts')
+            .where((r) => r['id'] == payload['debt_id'])
+            .firstOrNull?['currency'] ??
+        widget.store
+            .rows('savings_goals')
+            .where((r) => r['id'] == payload['goal_id'])
+            .firstOrNull?['currency'] ??
+        widget.store.currency;
+    const labels = {
+      'name': 'Nama',
+      'type': 'Jenis',
+      'amount': 'Nominal',
+      'amount_minor': 'Nominal',
+      'principal': 'Pokok',
+      'principal_paid': 'Pokok dibayar',
+      'interest_paid': 'Bunga dibayar',
+      'target_amount': 'Target',
+      'target_date': 'Tanggal target',
+      'due': 'Jatuh tempo',
+      'effective_at': 'Tanggal transaksi',
+      'next_at': 'Jadwal berikutnya',
+      'end_at': 'Berakhir',
+      'cadence': 'Pengulangan',
+      'mode': 'Mode pencatatan',
+      'active': 'Aktif',
+      'account_id': 'Akun',
+      'destination_account_id': 'Akun tujuan',
+      'category_id': 'Kategori',
+      'parent_id': 'Kategori induk',
+      'goal_id': 'Tujuan tabungan',
+      'debt_id': 'Utang / piutang',
+      'transaction_id': 'Transaksi tertaut',
+      'currency': 'Mata uang',
+      'merchant': 'Toko / merchant',
+      'description': 'Keterangan',
+      'notes': 'Catatan',
+      'reason': 'Alasan',
+      'counterparty': 'Pihak terkait',
+      'rate': 'Bunga (%)',
+      'payload_json': 'Rincian transaksi',
+      'favourite': 'Favorit',
+      'archived': 'Diarsipkan',
+      'tags': 'Tag',
+      'splits': 'Pembagian kategori',
+      'period_start': 'Awal periode',
+      'period_end': 'Akhir periode',
+      'default_budget': 'Anggaran default',
+      'format': 'Format',
+      'status': 'Status',
+    };
+    String show(String k, dynamic v, String unit) {
+      if (v == null) return '—';
+      if ([
+        'amount',
+        'amount_minor',
+        'principal',
+        'principal_paid',
+        'interest_paid',
+        'target_amount',
+        'default_budget',
+      ].contains(k))
+        return money(v, unit);
+      final table = switch (k) {
+        'account_id' || 'destination_account_id' => 'accounts',
+        'category_id' || 'parent_id' => 'categories',
+        'goal_id' => 'savings_goals',
+        'debt_id' => 'debts',
+        _ => null,
+      };
+      if (table != null) return widget.store.name(table, v);
+      if (v is bool) return v ? 'Ya' : 'Tidak';
+      if (v is Map)
+        return v.entries
+            .where(
+              (e) => ![
+                'expected_version',
+                'source_ref',
+                'attachment_path',
+                'user_id',
+              ].contains(e.key),
+            )
+            .map(
+              (e) =>
+                  '${labels[e.key] ?? e.key.toString().replaceAll('_', ' ')}: ${show(e.key, e.value, v['currency'] ?? unit)}',
+            )
+            .join('\n');
+      if (v is List) return v.map((x) => show('item', x, unit)).join('\n');
+      return {
+            'expense': 'Pengeluaran',
+            'income': 'Pemasukan',
+            'transfer': 'Transfer',
+            'posted': 'Tercatat',
+            'draft': 'Draft',
+            'pending': 'Menunggu',
+            'daily': 'Harian',
+            'weekly': 'Mingguan',
+            'monthly': 'Bulanan',
+            'yearly': 'Tahunan',
+            'debt': 'Utang',
+            'receivable': 'Piutang',
+            'auto-post': 'Catat otomatis',
+          }[v.toString()] ??
+          v.toString();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${method == 'POST'
+              ? 'Tambah'
+              : method == 'PATCH'
+              ? 'Ubah'
+              : 'Hapus / nonaktifkan'} ${resources[resource] ?? resource}',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        for (final e in payload.entries.where(
+          (e) => ![
+            'expected_version',
+            'source_ref',
+            'attachment_path',
+            'user_id',
+          ].contains(e.key),
+        ))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: SelectableText(
+              '${labels[e.key] ?? e.key.replaceAll('_', ' ')}: ${show(e.key, e.value, currency)}',
+            ),
+          ),
+        if (payload['attachment_path'] != null)
+          const Text('Struk terlampir', style: TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -373,11 +547,7 @@ class _FinanceAiPageState extends State<FinanceAiPage> {
                           style: theme.textTheme.titleMedium,
                         ),
                         const SizedBox(height: 8),
-                        Text(a['tool']),
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          const JsonEncoder.withIndent('  ').convert(a['args']),
-                        ),
+                        actionDetails(a),
                         const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
