@@ -6,11 +6,13 @@ The [visual refresh](docs/UI_REFRESH.md) follows the user-provided reference ima
 
 ## Download
 
-Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 31 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
+Get the signed Android APK, Web bundle, and SHA-256 checksums from [GitHub Releases](https://github.com/alids522/financegpt/releases). The [build workflow](https://github.com/alids522/financegpt/actions/workflows/build.yml) runs formatting, static analysis, 33 unit/widget tests, Android release signing, and Web compilation. iOS source is included; an iOS distribution build requires macOS and Apple signing.
 
 Latest verified update: [Adoetz Finance build 21 APK](https://github.com/alids522/financegpt/releases/download/v1.0.0-build.21/finance-tracker-android.apk), with personal BYOK Finance AI, expanded REST/MCP controls, the supplied wallet icon, and the existing statements/forecast/navigation features. See the [verification record](docs/AI_INTEGRATION.md).
 
 See [Finance AI and expanded REST/MCP controls](docs/AI_INTEGRATION.md) for BYOK setup, privacy, context management and supported document formats.
+
+API tokens now support [YOLO execution](docs/YOLO_API.md), configurable per token.
 
 ## Implemented
 

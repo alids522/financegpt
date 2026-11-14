@@ -31,7 +31,7 @@ export const managedTools = Object.entries(managed).flatMap((
     path,
     method: ["POST", "PATCH", "DELETE"][i],
     description: verb + " own " + table +
-      ". Monetary fields are integer minor units. Edit/delete requires record_id and current expected_version. Categories delete archives, recurring delete disables. Allocations and payment records are bookkeeping; they do not move money. Deletion and payments require owner approval.",
+      ". Monetary fields are integer minor units. Edit/delete requires record_id and current expected_version. Categories delete archives, recurring delete disables. Allocations and payment records are bookkeeping; they do not move money. Approval follows token policy; YOLO executes permitted writes immediately.",
     parameters: {
       type: "object",
       properties: {

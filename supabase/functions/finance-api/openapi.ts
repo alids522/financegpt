@@ -154,7 +154,7 @@ export function openapi(base: string) {
         ),
     },
     post: operation(
-      "Atomic financial posting; OAuth clients obey approval policy",
+      "Atomic financial posting; Personal tokens obey approval policy (risk, always, yolo)",
       "post",
       transaction,
     ),
@@ -232,7 +232,7 @@ export function openapi(base: string) {
   paths["/exports"] = {
     get: operation("List export jobs"),
     post: operation(
-      "Queue private CSV/PDF report; agents require user approval",
+      "Queue private CSV/PDF report; token policy controls approval; YOLO executes immediately",
       "post",
     ),
   };
@@ -278,7 +278,7 @@ export function openapi(base: string) {
     };
   }
   (paths["/transactions/{id}"] as Record<string, unknown>).delete = operation(
-    "Void owned transaction with expected_version and reason; agents require approval",
+    "Void owned transaction with expected_version and reason; token policy controls approval; YOLO executes immediately",
     "delete",
   );
   for (const [path, [table, scope]] of Object.entries(managed)) {
@@ -301,7 +301,7 @@ export function openapi(base: string) {
       ),
       delete: operation(
         "Delete/archive/disable " + table +
-          "; expected_version required; token requires approval",
+          "; expected_version required; token policy controls approval; YOLO executes immediately",
         "delete",
       ),
     };

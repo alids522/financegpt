@@ -307,13 +307,22 @@ extension _FinanceAgents on _FinanceShellState {
   }
 
   String tokenCaption(FinanceRow connection) {
+    final mode = store
+        .rows('agent_policies')
+        .where((p) => p['connection_id'] == connection['id'])
+        .firstOrNull?['approval_mode'];
+    final label = mode == 'yolo'
+        ? 'YOLO'
+        : mode == 'always'
+        ? 'Selalu approval'
+        : 'Risk';
     final token = store
         .rows('personal_tokens')
         .where((t) => t['connection_id'] == connection['id'])
         .firstOrNull;
     return token == null
-        ? connection['status']
-        : '${token['prefix']}… · ${token['status']} · berlaku s.d. ${dateLabel(token['expires_at'])}';
+        ? '${connection['status']} · $label'
+        : '${token['prefix']}… · ${token['status']} · $label · berlaku s.d. ${dateLabel(token['expires_at'])}';
   }
 
   Future<void> connectAgent() async {
@@ -414,7 +423,10 @@ extension _FinanceAgents on _FinanceShellState {
         daily = TextEditingController(
           text: '${limits['daily_cap'] ?? 5000000}',
         );
-    var always = policy?['approval_mode'] == 'always';
+    var approvalMode =
+        ['risk', 'always', 'yolo'].contains(policy?['approval_mode'])
+        ? policy!['approval_mode'] as String
+        : 'risk';
     final allowedAccounts = (policy?['account_allowlist'] as List? ?? [])
         .map((x) => '$x')
         .toSet();
@@ -436,6 +448,47 @@ extension _FinanceAgents on _FinanceShellState {
                     'Admin dan pengubahan izin tidak pernah dapat diakses oleh agent.',
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: approvalMode,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Mode eksekusi API / MCP',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'risk',
+                        child: Text(
+                          'Risk · approval untuk aksi tertentu',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'always',
+                        child: Text(
+                          'Selalu minta approval',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'yolo',
+                        child: Text(
+                          'YOLO · langsung jalankan',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => local(() => approvalMode = v!),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    approvalMode == 'yolo'
+                        ? 'Tanpa approval. Izin token, pembatasan akun/kategori, dan batas pemakaian tetap berlaku.'
+                        : 'Permintaan mengikuti aturan approval yang dipilih.',
+                  ),
+                  const SizedBox(height: 12),
                   for (final scope in agentScopes)
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
@@ -447,17 +500,19 @@ extension _FinanceAgents on _FinanceShellState {
                   const Divider(),
                   TextField(
                     controller: create,
+                    enabled: approvalMode != 'yolo',
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Batas create otomatis (IDR)',
+                      labelText: 'Ambang approval create (IDR)',
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: edit,
+                    enabled: approvalMode != 'yolo',
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Batas selisih edit otomatis (IDR)',
+                      labelText: 'Ambang approval selisih edit (IDR)',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -467,12 +522,6 @@ extension _FinanceAgents on _FinanceShellState {
                     decoration: const InputDecoration(
                       labelText: 'Batas nominal harian (IDR)',
                     ),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Selalu minta approval'),
-                    value: always,
-                    onChanged: (v) => local(() => always = v),
                   ),
                   ExpansionTile(
                     title: const Text('Batasi akun'),
@@ -550,12 +599,13 @@ extension _FinanceAgents on _FinanceShellState {
           body: {
             'permissions': permissions,
             'limits': {
+              ...limits,
               'create_limit': c,
               'edit_limit': e,
               'daily_cap': d,
-              'hourly_cap': 30,
+              'hourly_cap': limits['hourly_cap'] ?? 30,
             },
-            'approval_mode': always ? 'always' : 'risk',
+            'approval_mode': approvalMode,
             'account_allowlist': allowedAccounts.toList(),
             'category_allowlist': allowedCategories.toList(),
           },
