@@ -1,6 +1,6 @@
 # Verification record
 
-Latest verification: [Adoetz Finance AI, expanded REST/MCP controls and build 21](AI_INTEGRATION.md). Previous update: [personal tokens, e-statements and build 17](TOKENS_STATEMENTS.md). The record below documents the original 2026-11-08 baseline; its OAuth integration has since been retired in favor of personal tokens.
+Latest verification: [YOLO API/MCP execution and build 22](YOLO_API.md). Previous updates: [Finance AI and build 21](AI_INTEGRATION.md), [personal tokens, e-statements and build 17](TOKENS_STATEMENTS.md). The record below documents the original 2026-11-08 baseline; its OAuth integration has since been retired in favor of personal tokens.
 
 Executed against the configured self-hosted backend on 2026-11-08. Test accounts were isolated fixtures, not real users. Production performance targets are not claimed from these functional checks.
 
